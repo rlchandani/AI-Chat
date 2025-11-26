@@ -6,7 +6,7 @@ export interface AppSettings {
     showTimestamps: boolean;
     autoScroll: boolean;
     markdownRendering: boolean;
-    alwaysShowSidebar: boolean;
+    autoHideSidebar: boolean;
     
     // Model preferences
     defaultModel: string;
@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     showTimestamps: false,
     autoScroll: true,
     markdownRendering: true,
-    alwaysShowSidebar: false,
+    autoHideSidebar: true,
     defaultModel: 'gemini-2.5-flash',
     enableDebugLogs: false,
     maxHistoryItems: 100,

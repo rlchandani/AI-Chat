@@ -49,7 +49,7 @@ interface GitHubData {
 }
 
 export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEditable = false, onRefreshStateChange }: GitHubActivityWidgetProps) {
-  const [username, setUsername] = useState(initialUsername || 'octocat');
+  const [username, setUsername] = useState(initialUsername || 'rlchandani');
   const [isEditing, setIsEditing] = useState(false);
   const [githubData, setGithubData] = useState<GitHubData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,9 +79,9 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await fetch(`/api/github?username=${encodeURIComponent(user)}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch GitHub data');
       }
@@ -118,7 +118,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
       }
 
       const response = await fetch(`/api/github?username=${encodeURIComponent(userToFetch)}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch GitHub data');
       }
@@ -159,7 +159,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
   };
 
   const handleCancel = () => {
-    setUsername(initialUsername || 'octocat');
+    setUsername(initialUsername || 'rlchandani');
     setIsEditing(false);
   };
 
@@ -277,8 +277,8 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
       <div className="flex-1 overflow-auto">
         {/* User Profile Header */}
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-border/50">
-          <img 
-            src={user.avatar_url} 
+          <img
+            src={user.avatar_url}
             alt={user.login}
             className="w-12 h-12 rounded-full border-2 border-border"
           />

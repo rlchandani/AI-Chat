@@ -4,16 +4,16 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { useManualChat } from '@/hooks/use-manual-chat';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { InputArea } from '@/components/chat/InputArea';
-import { ChatMenu } from '@/components/chat/ChatMenu';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { ConversationsSidebar } from '@/components/chat/ConversationsSidebar';
 import { ModelChangeDialog } from '@/components/chat/ModelChangeDialog';
 import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ShareConversation } from '@/components/chat/ShareConversation';
+import { Settings } from '@/components/chat/Settings';
 import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel } from '@/utils/modelStorage';
 import { getCurrentConversationId, createNewConversation, loadChatHistory, loadUsageStats, getConversationMetadata, getUnsavedConversationMetadata, setCurrentConversationId as saveCurrentConversationId, findEmptyConversation } from '@/utils/chatStorage';
 import { getSetting } from '@/utils/settingsStorage';
-import { Menu } from 'lucide-react';
+import { Menu, Settings as SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -26,8 +26,9 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true); // Open by default on desktop
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
   const [cumulativeUsage, setCumulativeUsage] = useState<{ tokens: number; cost: number } | null>(null);
-  const [alwaysShowSidebar, setAlwaysShowSidebar] = useState(false);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
   const [conversationTitle, setConversationTitle] = useState<string>('New Conversation');
+  const [showSettings, setShowSettings] = useState(false);
   const [modelChangeDialog, setModelChangeDialog] = useState<{ isOpen: boolean; newModelId: string | null }>({
     isOpen: false,
     newModelId: null,
@@ -43,18 +44,18 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       const savedModel = getSelectedModel();
       setSelectedModel(savedModel);
-      
+
       // Check if there's a conversation ID in the URL (shared link)
       const urlParams = new URLSearchParams(window.location.search);
       const urlConversationId = urlParams.get('conversation');
-      
+
       // Initialize conversation
-      let convId: string;
+      let convId: string = '';
       if (urlConversationId) {
         // Use conversation from URL if provided (shared link)
         convId = urlConversationId;
         saveCurrentConversationId(convId);
-        
+
         // Load messages for shared conversation
         const savedMessages = loadChatHistory(convId);
         if (savedMessages.length > 0) {
@@ -63,8 +64,7 @@ export default function Home() {
       } else {
         // Check if current conversation exists and is empty (un-interacted)
         const currentId = getCurrentConversationId();
-        let convId: string;
-        
+
         if (currentId) {
           const currentMessages = loadChatHistory(currentId);
           if (currentMessages.length === 0) {
@@ -88,17 +88,17 @@ export default function Home() {
             convId = createNewConversation();
           }
         }
-        
+
         saveCurrentConversationId(convId);
         setMessages([]); // Start with empty messages
-        
+
         // Update URL with conversation ID
         const url = new URL(window.location.href);
         url.searchParams.set('conversation', convId);
         router.replace(url.pathname + url.search, { scroll: false });
       }
       setCurrentConversationId(convId);
-      
+
       // Load cumulative usage stats
       const savedUsage = loadUsageStats(convId);
       if (savedUsage) {
@@ -139,21 +139,21 @@ export default function Home() {
     // Check if there's already an unsaved empty conversation
     const { getAllConversationIds, loadChatHistory } = require('@/utils/chatStorage');
     const savedIds = getAllConversationIds();
-    
+
     // For now, just create a new one - the sidebar will handle checking for existing unsaved
     const newId = createNewConversation();
     setCurrentConversationId(newId);
     setMessages([]);
     setCumulativeUsage(null);
     setConversationTitle('New Conversation');
-    
+
     // Update URL with new conversation ID
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('conversation', newId);
       router.replace(url.pathname + url.search, { scroll: false });
     }
-    
+
     // Don't close sidebar on desktop - only close on mobile
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setSidebarOpen(false);
@@ -178,11 +178,11 @@ export default function Home() {
     if (!modelChangeDialog.newModelId) return;
 
     const newModelId = modelChangeDialog.newModelId;
-    
+
     // Update model in state and localStorage
     setSelectedModel(newModelId); // Update state
     saveSelectedModel(newModelId); // Save to localStorage
-    
+
     if (action === 'new') {
       // Start new conversation with new model
       handleNewConversation();
@@ -206,14 +206,14 @@ export default function Home() {
 
   const handleConversationChange = (conversationId: string) => {
     setCurrentConversationId(conversationId);
-    
+
     // Update URL with conversation ID
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('conversation', conversationId);
       router.replace(url.pathname + url.search, { scroll: false });
     }
-    
+
     // Load usage stats for the new conversation
     const savedUsage = loadUsageStats(conversationId);
     if (savedUsage) {
@@ -238,9 +238,9 @@ export default function Home() {
   // Initialize sidebar state - open by default on desktop, closed on mobile
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const alwaysShow = getSetting('alwaysShowSidebar');
-      setAlwaysShowSidebar(alwaysShow);
-      if (alwaysShow) {
+      const autoHide = getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+      if (!autoHide) {
         setSidebarOpen(true);
       } else {
         // Set initial state based on screen size
@@ -253,12 +253,12 @@ export default function Home() {
     }
   }, []);
 
-  // Listen for settings updates to handle alwaysShowSidebar changes
+  // Listen for settings updates to handle autoHideSidebar changes
   useEffect(() => {
     const handleSettingsUpdate = () => {
-      const alwaysShow = getSetting('alwaysShowSidebar');
-      setAlwaysShowSidebar(alwaysShow);
-      if (alwaysShow) {
+      const autoHide = getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+      if (!autoHide) {
         setSidebarOpen(true);
       }
     };
@@ -346,15 +346,15 @@ export default function Home() {
         onConversationSelect={handleSwitchConversation}
         currentConversationId={currentConversationId}
         onConversationChange={handleConversationChange}
-        conversationType="chat"
+        isGenerating={isLoading}
       />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
+        {/* Header */}
         <header className="h-14 border-b border-border flex items-center justify-between px-4 md:px-6 pt-2 bg-background/80 backdrop-blur-md z-50 sticky top-0">
           <div className="flex items-center gap-3">
-            {!alwaysShowSidebar && (
+            {autoHideSidebar && (
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="p-2 rounded-lg hover:bg-accent transition-colors"
@@ -364,12 +364,12 @@ export default function Home() {
               </button>
             )}
             <div className="flex items-center gap-2">
-              <img 
-                src="/logo.png" 
-                alt="Logo" 
+              <img
+                src="/logo.png"
+                alt="Logo"
                 className="h-8 w-8 object-contain"
               />
-        <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+              <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
                 iRedlof
               </div>
               <div className="hidden md:flex items-center gap-1 ml-4 rounded-full bg-muted/40 p-1">
@@ -394,6 +394,11 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <ModelSelector
+              selectedModelId={selectedModel}
+              onModelChange={setSelectedModel}
+              onModelSelect={handleModelSelect}
+            />
             {/* Context Window Info - Show cumulative tokens from storage or current usage */}
             {mounted && (cumulativeUsage || usageInfo) && (() => {
               const modelInfo = getModelInfo(selectedModel);
@@ -403,7 +408,7 @@ export default function Home() {
               const usagePercent = contextWindow > 0 ? (totalTokens / contextWindow) * 100 : 0;
               const formattedTokens = totalTokens.toLocaleString();
               const formattedLimit = contextWindow > 0 ? (contextWindow / 1000000).toFixed(contextWindow >= 1000000 ? 0 : 1) + 'M' : 'N/A';
-              
+
               return (
                 <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border text-xs">
                   <div className="flex items-center gap-1.5">
@@ -435,7 +440,7 @@ export default function Home() {
                 );
               }
               const formattedCost = (cost || 0) > 0 ? (cost || 0).toFixed(4) : '0.0000';
-              
+
               return (
                 <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border text-xs">
                   <span className="text-muted-foreground">
@@ -448,32 +453,32 @@ export default function Home() {
               <ShareConversation conversationId={currentConversationId} />
             )}
             <ThemeToggle />
-            <ModelSelector 
-              selectedModelId={selectedModel}
-              onModelChange={setSelectedModel}
-              onModelSelect={handleModelSelect}
-            />
-            <ChatMenu 
-              onClear={clearMessages} 
-              onNewConversation={handleNewConversation}
-              onSwitchConversation={handleSwitchConversation}
-            />
-        </div>
-      </header>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-lg hover:bg-accent transition-colors"
+              aria-label="Settings"
+            >
+              <SettingsIcon size={20} className="text-muted-foreground" />
+            </button>
+          </div>
+        </header>
 
-      {/* Chat Area */}
-      <ChatInterface messages={messages} isLoading={isLoading} modelId={selectedModel} />
+        {/* Settings Panel */}
+        <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
-      {/* Input Area */}
+        {/* Chat Area */}
+        <ChatInterface messages={messages} isLoading={isLoading} modelId={selectedModel} />
+
+        {/* Input Area */}
         <div className="px-8 md:px-16 py-4 pb-8 bg-gradient-to-t from-background via-background to-transparent z-20">
-        <InputArea
-          input={input}
-          handleInputChange={handleInputChange}
-          handleSubmit={onSubmit}
-          isLoading={isLoading}
-          stop={stop}
+          <InputArea
+            input={input}
+            handleInputChange={handleInputChange}
+            handleSubmit={onSubmit}
+            isLoading={isLoading}
+            stop={stop}
             modelId={selectedModel}
-        />
+          />
         </div>
       </div>
 
@@ -495,9 +500,8 @@ function NavTab({ href, currentPath, children }: { href: string; currentPath: st
   return (
     <Link
       href={href}
-      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-        isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-      }`}
+      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+        }`}
     >
       {children}
     </Link>

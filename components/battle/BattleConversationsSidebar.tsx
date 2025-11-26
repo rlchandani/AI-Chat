@@ -4,36 +4,36 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plus, MessageSquare, Trash2, Edit2, X, Check, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    getAllConversations,
-    getCurrentConversationId,
-    setCurrentConversationId,
-    createNewConversation,
-    deleteConversation,
-    renameConversation,
-    loadChatHistory,
-    getAllConversationIds,
-    findEmptyConversation,
-    clearAllChatHistory,
-} from '@/utils/chatStorage';
+    getAllBattleConversations,
+    getCurrentBattleConversationId,
+    setCurrentBattleConversationId,
+    createNewBattleConversation,
+    deleteBattleConversation,
+    renameBattleConversation,
+    loadBattleHistory,
+    getAllBattleConversationIds,
+    findEmptyBattleConversation,
+    clearAllBattleHistory,
+} from '@/utils/battleStorage';
 import { getSetting } from '@/utils/settingsStorage';
 
-interface ConversationsSidebarProps {
+interface BattleConversationsSidebarProps {
     isOpen: boolean;
     onClose?: () => void;
-    onConversationSelect: (messages: any[]) => void;
+    onConversationSelect: (data: any) => void;
     currentConversationId: string;
     onConversationChange: (id: string) => void;
     isGenerating?: boolean;
 }
 
-export function ConversationsSidebar({
+export function BattleConversationsSidebar({
     isOpen,
     onClose,
     onConversationSelect,
     currentConversationId,
     onConversationChange,
     isGenerating = false,
-}: ConversationsSidebarProps) {
+}: BattleConversationsSidebarProps) {
     const [conversations, setConversations] = useState<Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }>>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editTitle, setEditTitle] = useState('');
@@ -49,7 +49,7 @@ export function ConversationsSidebar({
         setMounted(true);
         if (typeof window !== 'undefined') {
             setAutoHideSidebar(getSetting('autoHideSidebar'));
-            setSavedConversationCount(getAllConversationIds().length);
+            setSavedConversationCount(getAllBattleConversationIds().length);
         }
     }, []);
 
@@ -76,11 +76,13 @@ export function ConversationsSidebar({
 
     // Track unsaved conversations (conversations that exist but aren't saved)
     useEffect(() => {
-        const currentId = getCurrentConversationId();
+        const currentId = getCurrentBattleConversationId();
         if (currentId) {
-            const savedIds = getAllConversationIds();
-            const messages = loadChatHistory(currentId);
-            const isEmpty = messages.length === 0;
+            const savedIds = getAllBattleConversationIds();
+
+            // Check if empty
+            const battleData = loadBattleHistory(currentId);
+            const isEmpty = (battleData.leftMessages?.length || 0) === 0 && (battleData.rightMessages?.length || 0) === 0;
 
             if (!savedIds.includes(currentId) && isEmpty) {
                 // Current conversation is unsaved and empty, add it to the set
@@ -104,7 +106,7 @@ export function ConversationsSidebar({
     useEffect(() => {
         const handleStorageChange = () => {
             // Remove saved conversations from unsaved set
-            const savedIds = getAllConversationIds();
+            const savedIds = getAllBattleConversationIds();
             setSavedConversationCount(savedIds.length);
             setUnsavedConversationIds(prev => {
                 const next = new Set(prev);
@@ -115,105 +117,162 @@ export function ConversationsSidebar({
         };
 
         window.addEventListener('storage', handleStorageChange);
-        window.addEventListener('conversationUpdated', handleStorageChange);
+        window.addEventListener('battleConversationUpdated', handleStorageChange);
 
         return () => {
             window.removeEventListener('storage', handleStorageChange);
-            window.removeEventListener('conversationUpdated', handleStorageChange);
+            window.removeEventListener('battleConversationUpdated', handleStorageChange);
         };
     }, []);
 
     const loadConversations = useCallback(() => {
         // Clean up unsaved set - remove any that are now saved
-        const savedIds = getAllConversationIds();
+        const savedIds = getAllBattleConversationIds();
 
         setUnsavedConversationIds(prev => {
             const next = new Set(prev);
             savedIds.forEach(id => next.delete(id));
 
+            // Ensure current conversation is tracked if it's unsaved
+            // This fixes the issue where new chats don't appear immediately
+            if (currentConversationId && !savedIds.includes(currentConversationId)) {
+                if (currentConversationId.startsWith('battle-')) {
+                    next.add(currentConversationId);
+                }
+            }
+
             // Load conversations with cleaned unsaved IDs
             const unsavedIds = Array.from(next);
-            const allConvs = getAllConversations(unsavedIds);
-            setConversations(allConvs);
+
+            // Defensive check: filter out any IDs that don't match the conversation type
+            const filteredUnsavedIds = unsavedIds.filter(id => id.startsWith('battle-'));
+
+            const allConvs = getAllBattleConversations(filteredUnsavedIds);
+
+            // Additional defensive check
+            const filteredConvs = allConvs.filter(conv => conv.id.startsWith('battle-'));
+
+            setConversations(filteredConvs);
 
             return next;
         });
-    }, []);
+    }, [currentConversationId]);
 
     const handleNewConversation = () => {
         // Check if there's already an unsaved empty conversation
-        const savedIds = getAllConversationIds();
+        const savedIds = getAllBattleConversationIds();
+        
         const existingUnsaved = Array.from(unsavedConversationIds).find(id => {
             if (savedIds.includes(id)) return false;
-            const messages = loadChatHistory(id);
-            return messages.length === 0;
+            if (!id.startsWith('battle-')) return false;
+            const battleData = loadBattleHistory(id);
+            return (battleData.leftMessages?.length || 0) === 0 && (battleData.rightMessages?.length || 0) === 0;
         });
 
         if (existingUnsaved) {
-            setCurrentConversationId(existingUnsaved);
+            setCurrentBattleConversationId(existingUnsaved);
             onConversationChange(existingUnsaved);
-            onConversationSelect([]);
+            onConversationSelect({
+                leftMessages: [],
+                rightMessages: [],
+                leftModel: '',
+                rightModel: ''
+            });
             return;
         }
 
-        const existingSaved = findEmptyConversation();
+        // Check for existing saved empty conversation
+        const existingSaved = findEmptyBattleConversation();
         if (existingSaved) {
-            setCurrentConversationId(existingSaved);
+            setCurrentBattleConversationId(existingSaved);
             onConversationChange(existingSaved);
-            onConversationSelect([]);
+            onConversationSelect({
+                leftMessages: [],
+                rightMessages: [],
+                leftModel: '',
+                rightModel: ''
+            });
             return;
         }
 
-        const newId = createNewConversation();
+        // Create new one
+        const newId = createNewBattleConversation({ reuseEmpty: false }); // We already checked for empty above
+        
+        setCurrentBattleConversationId(newId);
         setUnsavedConversationIds(prev => new Set([...prev, newId]));
         onConversationChange(newId);
-        onConversationSelect([]);
+        // Pass empty battle data structure
+        onConversationSelect({
+            leftMessages: [],
+            rightMessages: [],
+            leftModel: '',
+            rightModel: ''
+        });
+        
+        // Immediately refresh the conversation list to show the new conversation
+        // Need to manually add to conversations since state update is async
+        const newConv = {
+            id: newId,
+            title: 'New Battle',
+            lastUpdated: Date.now(),
+            messageCount: 0,
+            createdAt: Date.now(),
+        };
+        setConversations(prev => [newConv, ...prev.filter(c => c.id !== newId)]);
     };
 
     const handleSelectConversation = (conversationId: string) => {
-        setCurrentConversationId(conversationId);
+        setCurrentBattleConversationId(conversationId);
         onConversationChange(conversationId);
-        const messages = loadChatHistory(conversationId);
-        onConversationSelect(messages);
+
+        const battleData = loadBattleHistory(conversationId);
+        onConversationSelect(battleData);
 
         if (onClose) onClose();
     };
 
     const handleDeleteConversation = (e: React.MouseEvent, conversationId: string) => {
         e.stopPropagation();
-        if (confirm('Are you sure you want to delete this conversation?')) {
-            const wasCurrentConversation = conversationId === currentConversationId;
+        e.preventDefault();
+        
+        if (!confirm('Are you sure you want to delete this battle?')) {
+            return;
+        }
+        
+        const wasCurrentConversation = conversationId === currentConversationId;
 
-            // Check if it's a saved conversation
-            const savedIds = getAllConversationIds();
-            if (savedIds.includes(conversationId)) {
-                deleteConversation(conversationId);
+        // Check if it's a saved conversation
+        const savedIds = getAllBattleConversationIds();
+        
+        if (savedIds.includes(conversationId)) {
+            deleteBattleConversation(conversationId);
+        } else {
+            // It's unsaved, remove from unsaved set
+            setUnsavedConversationIds(prev => {
+                const next = new Set(prev);
+                next.delete(conversationId);
+                return next;
+            });
+        }
+
+        // Remove from local conversations state immediately
+        setConversations(prev => prev.filter(c => c.id !== conversationId));
+
+        // If we deleted the current conversation, switch to another
+        if (wasCurrentConversation) {
+            const remainingConversations = getAllBattleConversations();
+            
+            if (remainingConversations.length > 0) {
+                // Switch to the first remaining conversation (most recent)
+                const newConversationId = remainingConversations[0].id;
+                setCurrentBattleConversationId(newConversationId);
+
+                const battleData = loadBattleHistory(newConversationId);
+                onConversationSelect(battleData);
+                onConversationChange(newConversationId);
             } else {
-                // It's unsaved, remove from unsaved set
-                setUnsavedConversationIds(prev => {
-                    const next = new Set(prev);
-                    next.delete(conversationId);
-                    return next;
-                });
-            }
-
-            // Reload conversations
-            loadConversations();
-
-            // If we deleted the current conversation, switch to another
-            if (wasCurrentConversation) {
-                const updatedConversations = getAllConversations();
-                if (updatedConversations.length > 0) {
-                    // Switch to the first remaining conversation (most recent)
-                    const newConversationId = updatedConversations[0].id;
-                    setCurrentConversationId(newConversationId);
-                    const messages = loadChatHistory(newConversationId);
-                    onConversationSelect(messages);
-                    onConversationChange(newConversationId);
-                } else {
-                    // No conversations left, create a new one
-                    handleNewConversation();
-                }
+                // No conversations left, create a new one
+                handleNewConversation();
             }
         }
     };
@@ -227,7 +286,7 @@ export function ConversationsSidebar({
     const handleSaveEdit = (e: React.MouseEvent, conversationId: string) => {
         e.stopPropagation();
         if (editTitle.trim()) {
-            renameConversation(conversationId, editTitle.trim());
+            renameBattleConversation(conversationId, editTitle.trim());
             loadConversations();
         }
         setEditingId(null);
@@ -307,13 +366,13 @@ export function ConversationsSidebar({
             >
                 {/* Header */}
                 <div className="h-14 flex items-center justify-between px-4 border-b border-border">
-                    <h2 className="text-lg font-semibold">Conversations</h2>
+                    <h2 className="text-lg font-semibold">Battle History</h2>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleNewConversation}
                             disabled={isGenerating}
                             className={`p-2 rounded-lg transition-colors ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent'}`}
-                            title={isGenerating ? "Cannot create new conversation while generating" : "New conversation"}
+                            title={isGenerating ? "Cannot create new battle while generating" : "New battle"}
                         >
                             <Plus size={20} />
                         </button>
@@ -334,12 +393,12 @@ export function ConversationsSidebar({
                     {conversations.length === 0 ? (
                         <div className="p-8 text-center text-muted-foreground">
                             <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
-                            <p className="text-sm">No conversations yet</p>
+                            <p className="text-sm">No battles yet</p>
                             <button
                                 onClick={handleNewConversation}
                                 className="mt-4 text-primary hover:underline text-sm"
                             >
-                                Create your first conversation
+                                Start your first battle
                             </button>
                         </div>
                     ) : (
@@ -417,25 +476,26 @@ export function ConversationsSidebar({
                                                     </div>
                                                 </div>
 
-                                                {/* Action buttons on hover */}
-                                                {hoveredId === conv.id && (
-                                                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button
-                                                            onClick={(e) => handleStartEdit(e, conv.id, conv.title)}
-                                                            className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-                                                            title="Rename"
-                                                        >
-                                                            <Edit2 size={14} />
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => handleDeleteConversation(e, conv.id)}
-                                                            className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                {/* Action buttons - always visible when active, hover to reveal otherwise */}
+                                                <div className={`
+                                                    absolute top-2 right-2 flex items-center gap-1 transition-opacity
+                                                    ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+                                                `}>
+                                                    <button
+                                                        onClick={(e) => handleStartEdit(e, conv.id, conv.title)}
+                                                        className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                                                        title="Rename"
+                                                    >
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleDeleteConversation(e, conv.id)}
+                                                        className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
                                             </>
                                         )}
                                     </div>
@@ -445,7 +505,7 @@ export function ConversationsSidebar({
                     )}
                 </div>
 
-                {/* Delete All History Button - only show if there are saved conversations */}
+                {/* Delete All History Button - only show if there are saved battles */}
                 {mounted && savedConversationCount > 0 && (
                     <div className="p-3 border-t border-border">
                         <button
@@ -481,13 +541,13 @@ export function ConversationsSidebar({
                                     <AlertTriangle size={24} className="text-red-500" />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-semibold">Delete All Chat History</h3>
+                                    <h3 className="text-lg font-semibold">Delete All Battle History</h3>
                                     <p className="text-sm text-muted-foreground">This action cannot be undone</p>
                                 </div>
                             </div>
                             <p className="text-sm text-muted-foreground mb-6">
-                                Are you sure you want to delete all <strong>{savedConversationCount}</strong> conversation{savedConversationCount !== 1 ? 's' : ''}? 
-                                This will permanently remove all your chat history.
+                                Are you sure you want to delete all <strong>{savedConversationCount}</strong> battle{savedConversationCount !== 1 ? 's' : ''}? 
+                                This will permanently remove all your battle history.
                             </p>
                             <div className="flex gap-3 justify-end">
                                 <button
@@ -498,14 +558,19 @@ export function ConversationsSidebar({
                                 </button>
                                 <button
                                     onClick={() => {
-                                        clearAllChatHistory();
+                                        clearAllBattleHistory();
                                         setShowDeleteAllModal(false);
                                         setConversations([]);
                                         setUnsavedConversationIds(new Set());
-                                        // Create a new conversation after clearing
-                                        const newId = createNewConversation();
+                                        // Create a new battle after clearing
+                                        const newId = createNewBattleConversation();
                                         onConversationChange(newId);
-                                        onConversationSelect([]);
+                                        onConversationSelect({
+                                            leftMessages: [],
+                                            rightMessages: [],
+                                            leftModel: '',
+                                            rightModel: ''
+                                        });
                                     }}
                                     className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
                                 >
@@ -519,4 +584,3 @@ export function ConversationsSidebar({
         </>
     );
 }
-

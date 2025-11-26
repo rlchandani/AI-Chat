@@ -39,12 +39,14 @@ import {
   RefreshCw,
   Loader2,
   GitBranch,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StockQuoteCard } from '@/components/chat/StockQuoteCard';
 import { WeatherCard } from '@/components/chat/WeatherCard';
 import { ThemeToggle } from '@/components/chat/ThemeToggle';
+import { Settings } from '@/components/chat/Settings';
 import { LocationAutocomplete } from './LocationAutocomplete';
 import { StockTableWidget } from './StockTableWidget';
 import { ClockWidget } from './ClockWidget';
@@ -148,6 +150,7 @@ export function WidgetDashboard() {
     id?: string;
     type: WidgetType;
   } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const pathname = usePathname();
 
   const sensors = useSensors(
@@ -198,7 +201,7 @@ export function WidgetDashboard() {
       type,
       ...preset,
     };
-    
+
     // Add default config for widgets
     if (type === 'weather') {
       newWidget.config = { location: 'San Francisco, CA' };
@@ -207,9 +210,9 @@ export function WidgetDashboard() {
     } else if (type === 'stock-table') {
       newWidget.config = { tickers: 'AAPL,MSFT,GOOGL,AMZN' };
     } else if (type === 'github') {
-      newWidget.config = { username: 'octocat' };
+      newWidget.config = { username: 'rlchandani' };
     }
-    
+
     setWidgets((prev) => [...prev, newWidget]);
   };
 
@@ -262,12 +265,12 @@ export function WidgetDashboard() {
       items.map((widget) =>
         widget.id === id
           ? {
-              ...widget,
-              config: {
-                ...widget.config,
-                ...config,
-              },
-            }
+            ...widget,
+            config: {
+              ...widget.config,
+              ...config,
+            },
+          }
           : widget
       )
     );
@@ -310,9 +313,9 @@ export function WidgetDashboard() {
         <header className="h-14 border-b border-border flex items-center justify-between px-4 md:px-6 pt-2 bg-background/80 backdrop-blur-md z-50 sticky top-0">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <img 
-                src="/logo.png" 
-                alt="Logo" 
+              <img
+                src="/logo.png"
+                alt="Logo"
                 className="h-8 w-8 object-contain"
               />
               <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
@@ -334,8 +337,18 @@ export function WidgetDashboard() {
           <div className="flex items-center gap-4">
             <p className="hidden lg:block text-sm text-muted-foreground">Drag widgets to rearrange or drop new ones in.</p>
             <ThemeToggle />
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-lg hover:bg-accent transition-colors"
+              aria-label="Settings"
+            >
+              <SettingsIcon size={20} className="text-muted-foreground" />
+            </button>
           </div>
         </header>
+
+        {/* Settings Panel */}
+        <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
         <DndContext
           sensors={sensors}
@@ -379,13 +392,13 @@ export function WidgetDashboard() {
                   <div className="p-4 bg-background/80">
                     <WidgetPreview
                       type={activeDrag.type}
-                      widget={{ 
-                        id: '', 
-                        type: activeDrag.type, 
+                      widget={{
+                        id: '',
+                        type: activeDrag.type,
                         width: SIZE_PRESETS[activeDrag.type]?.width || FIXED_WIDGET_WIDTH,
                         config: activeDrag.type === 'stock-table' ? { tickers: 'AAPL,MSFT,GOOGL' } : undefined
                       }}
-                      onUpdate={() => {}}
+                      onUpdate={() => { }}
                     />
                   </div>
                 </div>
@@ -503,81 +516,81 @@ function SortableWidgetCard({
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {widget.type.toUpperCase()}
           </p>
-        <div className="flex items-center gap-2">
-          {/* Refresh button and status - only for stock, weather, stock-table, and github widgets */}
-          {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && refreshState && (
-            <>
-              <AnimatePresence>
-                {refreshState.refreshing && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Loader2 className="w-3 h-3 animate-spin text-foreground/70" />
-                  </motion.div>
-                )}
-                {refreshState.refreshMessage && !refreshState.refreshing && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="w-2 h-2 rounded-full bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title={refreshState.refreshMessage}
+          <div className="flex items-center gap-2">
+            {/* Refresh button and status - only for stock, weather, stock-table, and github widgets */}
+            {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && refreshState && (
+              <>
+                <AnimatePresence>
+                  {refreshState.refreshing && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Loader2 className="w-3 h-3 animate-spin text-foreground/70" />
+                    </motion.div>
+                  )}
+                  {refreshState.refreshMessage && !refreshState.refreshing && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      className="w-2 h-2 rounded-full bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title={refreshState.refreshMessage}
+                    />
+                  )}
+                </AnimatePresence>
+                <button
+                  type="button"
+                  onClick={refreshState.onRefresh}
+                  disabled={refreshState.refreshing}
+                  className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Refresh data"
+                  title="Refresh data"
+                >
+                  <RefreshCw
+                    size={14}
+                    className={refreshState.refreshing ? 'animate-spin' : ''}
                   />
-                )}
-              </AnimatePresence>
+                </button>
+              </>
+            )}
+            {/* Edit button - only for editable widgets */}
+            {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && (
               <button
                 type="button"
-                onClick={refreshState.onRefresh}
-                disabled={refreshState.refreshing}
-                className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Refresh data"
-                title="Refresh data"
+                onClick={() => setEditTrigger(prev => prev + 1)}
+                className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+                aria-label="Edit widget"
+                title="Edit widget"
               >
-                <RefreshCw 
-                  size={14} 
-                  className={refreshState.refreshing ? 'animate-spin' : ''} 
-                />
+                <Edit2 size={14} />
               </button>
-            </>
-          )}
-          {/* Edit button - only for editable widgets */}
-          {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && (
+            )}
             <button
               type="button"
-              onClick={() => setEditTrigger(prev => prev + 1)}
-              className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
-              aria-label="Edit widget"
-              title="Edit widget"
+              onClick={handleDeleteClick}
+              className="p-1.5 rounded-full hover:bg-destructive/20 active:bg-destructive/30 text-muted-foreground hover:text-destructive active:text-destructive transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+              aria-label="Remove widget"
             >
-              <Edit2 size={14} />
+              <Trash2 size={14} />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleDeleteClick}
-            className="p-1.5 rounded-full hover:bg-destructive/20 active:bg-destructive/30 text-muted-foreground hover:text-destructive active:text-destructive transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
-            aria-label="Remove widget"
-          >
-            <Trash2 size={14} />
-          </button>
-          <button
-            type="button"
-            className="p-1.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition"
-            {...attributes}
-            {...listeners}
-            aria-label="Drag widget"
-          >
-            <GripVertical size={16} />
-          </button>
-        </div>
+            <button
+              type="button"
+              className="p-1.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition"
+              {...attributes}
+              {...listeners}
+              aria-label="Drag widget"
+            >
+              <GripVertical size={16} />
+            </button>
+          </div>
         </div>
         <div className="p-4 flex-1 min-h-0">
-          <WidgetPreview 
-            type={widget.type} 
-            widget={widget} 
+          <WidgetPreview
+            type={widget.type}
+            widget={widget}
             onUpdate={onUpdate}
             onRefreshStateChange={setRefreshState}
             editTrigger={editTrigger}
@@ -748,11 +761,11 @@ function EditableStockTableWidget({
       window.dispatchEvent(editEvent);
     }
   }, [editTrigger, widget.id]);
-  
+
   return (
     <div className="w-full h-full relative group">
-      <StockTableWidget 
-        tickers={widget.config?.tickers || 'AAPL,MSFT,GOOGL'} 
+      <StockTableWidget
+        tickers={widget.config?.tickers || 'AAPL,MSFT,GOOGL'}
         onUpdate={(tickers) => onUpdate(widget.id, { tickers })}
         isEditable={true}
         onRefreshStateChange={onRefreshStateChange}
@@ -774,7 +787,7 @@ function EditableStockWidget({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [ticker, setTicker] = useState(widget.config?.ticker || 'AAPL');
-  
+
   // Trigger edit mode when editTrigger changes
   useEffect(() => {
     if (editTrigger && editTrigger > 0) {
@@ -837,8 +850,8 @@ function EditableStockWidget({
 
   return (
     <div className="w-full h-full relative group">
-      <StockQuoteCard 
-        ticker={widget.config?.ticker || 'AAPL'} 
+      <StockQuoteCard
+        ticker={widget.config?.ticker || 'AAPL'}
         autoFetch={true}
         onRefreshStateChange={onRefreshStateChange}
       />
@@ -860,7 +873,7 @@ function EditableWeatherWidget({
   const [isEditing, setIsEditing] = useState(false);
   const [location, setLocation] = useState(widget.config?.location || 'San Francisco, CA');
   const [unitType, setUnitType] = useState<'imperial' | 'metric'>(widget.config?.unitType || 'imperial');
-  
+
   // Trigger edit mode when editTrigger changes
   useEffect(() => {
     if (editTrigger && editTrigger > 0) {
@@ -945,8 +958,8 @@ function EditableWeatherWidget({
 
   return (
     <div className="w-full h-full relative group">
-      <WeatherCard 
-        location={widget.config?.location || 'San Francisco, CA'} 
+      <WeatherCard
+        location={widget.config?.location || 'San Francisco, CA'}
         autoFetch={true}
         onRefreshStateChange={onRefreshStateChange}
         useAutoLocation={widget.config?.useAutoLocation || false}
@@ -977,11 +990,11 @@ function EditableGitHubWidget({
       window.dispatchEvent(editEvent);
     }
   }, [editTrigger, widget.id]);
-  
+
   return (
     <div className="w-full h-full relative group">
-      <GitHubActivityWidget 
-        username={widget.config?.username || 'octocat'} 
+      <GitHubActivityWidget
+        username={widget.config?.username || 'rlchandani'}
         onUpdate={(username) => onUpdate(widget.id, { username })}
         isEditable={true}
         onRefreshStateChange={onRefreshStateChange}

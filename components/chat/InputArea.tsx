@@ -27,7 +27,10 @@ export function InputArea({ input, handleInputChange, handleSubmit, isLoading, s
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            handleSubmit(e as any);
+            // Don't submit if already loading
+            if (!isLoading) {
+                handleSubmit(e as any);
+            }
         }
     };
 
@@ -70,10 +73,10 @@ export function InputArea({ input, handleInputChange, handleSubmit, isLoading, s
                                     animate={{ scale: 1, opacity: 1 }}
                                     exit={{ scale: 0.8, opacity: 0 }}
                                     type="submit"
-                                    disabled={!input?.trim()}
+                                    disabled={!input?.trim() || isLoading}
                                     className={clsx(
                                         "w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200",
-                                        input?.trim()
+                                        input?.trim() && !isLoading
                                             ? "bg-primary text-primary-foreground shadow-md hover:shadow-lg hover:scale-105"
                                             : "bg-muted text-muted-foreground cursor-not-allowed"
                                     )}

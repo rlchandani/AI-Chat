@@ -3,15 +3,16 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { InputArea } from '@/components/chat/InputArea';
-import { ConversationsSidebar } from '@/components/chat/ConversationsSidebar';
+import { BattleConversationsSidebar } from '@/components/battle/BattleConversationsSidebar';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ShareConversation } from '@/components/chat/ShareConversation';
 import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel, getAllModels } from '@/utils/modelStorage';
-import { getCurrentBattleConversationId, createNewBattleConversation, loadBattleHistory, loadBattleUsageStats, getBattleConversationMetadata, getUnsavedBattleConversationMetadata, setCurrentBattleConversationId as saveCurrentBattleConversationId, findEmptyBattleConversation, saveBattleHistory, saveBattleUsageStats } from '@/utils/battleStorage';
+import { getCurrentBattleConversationId, createNewBattleConversation, loadBattleHistory, loadBattleUsageStats, getBattleConversationMetadata, getUnsavedBattleConversationMetadata, setCurrentBattleConversationId as saveCurrentBattleConversationId, findEmptyBattleConversation, saveBattleHistory, saveBattleUsageStats, getAllBattleConversationIds } from '@/utils/battleStorage';
 import { ManualChatStorage, useManualChat } from '@/hooks/use-manual-chat';
 import { getSetting } from '@/utils/settingsStorage';
-import { Menu, AlertCircle } from 'lucide-react';
+import { Settings } from '@/components/chat/Settings';
+import { Menu, AlertCircle, Settings as SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -22,19 +23,24 @@ export default function BattlePage() {
   const [mounted, setMounted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
-  const [alwaysShowSidebar, setAlwaysShowSidebar] = useState(false);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
   const [conversationTitle, setConversationTitle] = useState<string>('New Battle');
+  const [showSettings, setShowSettings] = useState(false);
   const [modelConflict, setModelConflict] = useState<string | null>(null);
   const [hasInteractionStarted, setHasInteractionStarted] = useState(false);
+
+  // Track which conversation ID the current messages belong to
+  // This prevents saving messages to the wrong ID during switching/creation
+  const loadedConversationIdRef = useRef<string>('');
 
   // Left chat (Chat 1)
   const [leftModel, setLeftModel] = useState<string>(DEFAULT_MODEL);
   const [leftUsage, setLeftUsage] = useState<{ tokens: number; cost: number } | null>(null);
   const battleStorageHandlers: ManualChatStorage = {
     loadHistory: () => [],
-    saveHistory: () => {},
+    saveHistory: () => { },
     loadUsageStats: () => null,
-    saveUsageStats: () => {},
+    saveUsageStats: () => { },
     getCurrentConversationId: () => getCurrentBattleConversationId(),
   };
 
@@ -59,7 +65,7 @@ export default function BattlePage() {
     if (typeof window !== 'undefined') {
       const savedModel = getSelectedModel();
       const allModels = getAllModels();
-      
+
       // Set different default models for left and right if possible
       if (allModels.length >= 2) {
         setLeftModel(allModels[0].id);
@@ -74,7 +80,7 @@ export default function BattlePage() {
       // Initialize conversation
       const urlParams = new URLSearchParams(window.location.search);
       const urlConversationId = urlParams.get('conversation');
-      
+
       let convId: string;
       if (urlConversationId) {
         convId = urlConversationId;
@@ -94,8 +100,7 @@ export default function BattlePage() {
         }
       } else {
         const currentId = getCurrentBattleConversationId();
-        let convId: string;
-        
+
         if (currentId) {
           const currentData = loadBattleHistory(currentId);
           if (currentData.leftMessages.length === 0 && currentData.rightMessages.length === 0) {
@@ -121,17 +126,18 @@ export default function BattlePage() {
             setHasInteractionStarted(false);
           }
         }
-        
+
         saveCurrentBattleConversationId(convId);
         leftChat.setMessages([]);
         rightChat.setMessages([]);
-        
+
         const url = new URL(window.location.href);
         url.searchParams.set('conversation', convId);
         router.replace(url.pathname + url.search, { scroll: false });
       }
       setCurrentConversationId(convId);
-      
+      loadedConversationIdRef.current = convId;
+
       // Load usage stats
       const savedUsage = loadBattleUsageStats(convId);
       if (savedUsage) {
@@ -217,96 +223,65 @@ export default function BattlePage() {
     setInput('');
   };
 
-  const handleNewConversation = () => {
-    // Set flag to prevent save effect from running during switch
-    isSwitchingRef.current = true;
-    
-    // Save current conversation first if it has messages (to preserve it)
-    const oldConversationId = currentConversationId;
-    if (oldConversationId && (leftChat.messages.length > 0 || rightChat.messages.length > 0)) {
-      // Save the old conversation with its ID explicitly
-      saveBattleHistory(leftChat.messages, rightChat.messages, leftModel, rightModel, oldConversationId);
-    }
-    
-    // Clear messages FIRST before creating new conversation to prevent saving old messages to new ID
-    leftChat.setMessages([]);
-    rightChat.setMessages([]);
-    setLeftUsage(null);
-    setRightUsage(null);
-    setHasInteractionStarted(false); // Reset interaction flag for new conversation
-    
-    // Now create new conversation
-    const newId = createNewBattleConversation();
-    saveCurrentBattleConversationId(newId); // Set the new ID in storage FIRST
-    setCurrentConversationId(newId); // Then update state
-    setConversationTitle('New Battle');
-    
-    // Clear the switching flag after a brief delay to allow state updates to complete
-    setTimeout(() => {
-      isSwitchingRef.current = false;
-    }, 100);
-    
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('conversation', newId);
-      router.replace(url.pathname + url.search, { scroll: false });
-    }
-    
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      setSidebarOpen(false);
-    }
-  };
+  const handleSwitchConversation = (data: any) => {
+    // This function is called by the sidebar when a conversation is selected.
+    // The sidebar now passes the loaded battle data directly.
 
-  const handleSwitchConversation = (messages: any[]) => {
-    // Load messages from Battle storage for the current conversation
-    const battleData = loadBattleHistory(currentConversationId);
+    const battleData = data as { leftMessages: any[], rightMessages: any[], leftModel?: string, rightModel?: string };
+
     leftChat.setMessages(battleData.leftMessages || []);
     rightChat.setMessages(battleData.rightMessages || []);
-    
+
     // Restore models if they were saved
     if (battleData.leftModel) setLeftModel(battleData.leftModel);
     if (battleData.rightModel) setRightModel(battleData.rightModel);
-    
+
     // Check if interaction has started
     const hasMessages = (battleData.leftMessages?.length || 0) > 0 || (battleData.rightMessages?.length || 0) > 0;
     setHasInteractionStarted(hasMessages);
-    
+
+    // Clear input
     setInput('');
   };
 
   const handleConversationChange = (conversationId: string) => {
     // Set flag to prevent save effect from running during switch
     isSwitchingRef.current = true;
-    
+
     // Save current conversation first if it has messages
     const oldConversationId = currentConversationId;
-    if (oldConversationId && oldConversationId !== conversationId && (leftChat.messages.length > 0 || rightChat.messages.length > 0)) {
+
+    // Only save if we have a valid old ID, it's different from the new one, 
+    // AND the loaded messages actually belong to the old ID
+    // AND the old conversation still exists in storage (wasn't just deleted)
+    const existingIds = getAllBattleConversationIds();
+    const oldConversationStillExists = existingIds.includes(oldConversationId);
+    
+    if (oldConversationId &&
+      oldConversationId !== conversationId &&
+      loadedConversationIdRef.current === oldConversationId &&
+      oldConversationStillExists &&
+      (leftChat.messages.length > 0 || rightChat.messages.length > 0)) {
       // Save the old conversation with its ID explicitly
       saveBattleHistory(leftChat.messages, rightChat.messages, leftModel, rightModel, oldConversationId);
     }
-    
+
     setCurrentConversationId(conversationId);
     saveCurrentBattleConversationId(conversationId);
-    
+
+    // CRITICAL: Update the ref immediately to match the new ID
+    // This prevents any lingering effects from saving old messages to the new ID
+    loadedConversationIdRef.current = conversationId;
+
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('conversation', conversationId);
       router.replace(url.pathname + url.search, { scroll: false });
     }
-    
-    // Load messages for the new conversation
-    const battleData = loadBattleHistory(conversationId);
-    leftChat.setMessages(battleData.leftMessages || []);
-    rightChat.setMessages(battleData.rightMessages || []);
-    
-    // Restore models if they were saved
-    if (battleData.leftModel) setLeftModel(battleData.leftModel);
-    if (battleData.rightModel) setRightModel(battleData.rightModel);
-    
-    // Check if interaction has started
-    const hasMessages = (battleData.leftMessages?.length || 0) > 0 || (battleData.rightMessages?.length || 0) > 0;
-    setHasInteractionStarted(hasMessages);
-    
+
+    // Note: Message loading is now handled by handleSwitchConversation (via sidebar)
+    // We only handle metadata and usage stats here
+
     const savedUsage = loadBattleUsageStats(conversationId);
     if (savedUsage) {
       if (savedUsage.left) {
@@ -337,19 +312,21 @@ export default function BattlePage() {
       const unsavedMetadata = getUnsavedBattleConversationMetadata(conversationId);
       setConversationTitle(unsavedMetadata?.title || 'New Battle');
     }
-    
+
     // Clear the switching flag after a brief delay to allow state updates to complete
     setTimeout(() => {
       isSwitchingRef.current = false;
     }, 100);
+
+    setInput('');
   };
 
   // Initialize sidebar state
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const alwaysShow = getSetting('alwaysShowSidebar');
-      setAlwaysShowSidebar(alwaysShow);
-      if (alwaysShow) {
+      const autoHide = getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+      if (!autoHide) {
         setSidebarOpen(true);
       } else {
         if (window.innerWidth >= 768) {
@@ -364,9 +341,9 @@ export default function BattlePage() {
   // Listen for settings updates
   useEffect(() => {
     const handleSettingsUpdate = () => {
-      const alwaysShow = getSetting('alwaysShowSidebar');
-      setAlwaysShowSidebar(alwaysShow);
-      if (alwaysShow) {
+      const autoHide = getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+      if (!autoHide) {
         setSidebarOpen(true);
       }
     };
@@ -476,7 +453,7 @@ export default function BattlePage() {
   // Save Battle messages when they change (save both chats with models)
   // Use a ref to track if we're in the middle of switching conversations
   const isSwitchingRef = useRef(false);
-  
+
   useEffect(() => {
     if (isSwitchingRef.current) {
       return;
@@ -484,6 +461,12 @@ export default function BattlePage() {
 
     const currentId = getCurrentBattleConversationId();
     if (!currentId) {
+      return;
+    }
+
+    // CRITICAL FIX: Only save if the messages actually belong to the current conversation
+    // This prevents saving empty/old messages to a new conversation ID during switching
+    if (loadedConversationIdRef.current && loadedConversationIdRef.current !== currentId) {
       return;
     }
 
@@ -504,7 +487,7 @@ export default function BattlePage() {
         tokens: leftChat.usageInfo.totalTokens,
         cost,
       });
-      
+
       // Save usage stats to Battle storage for left chat
       saveBattleUsageStats(
         currentConversationId,
@@ -527,7 +510,7 @@ export default function BattlePage() {
         tokens: rightChat.usageInfo.totalTokens,
         cost,
       });
-      
+
       // Save usage stats to Battle storage for right chat
       saveBattleUsageStats(
         currentConversationId,
@@ -542,13 +525,13 @@ export default function BattlePage() {
   return (
     <main className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* Sidebar */}
-      <ConversationsSidebar
+      <BattleConversationsSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onConversationSelect={handleSwitchConversation}
         currentConversationId={currentConversationId}
         onConversationChange={handleConversationChange}
-        conversationType="battle"
+        isGenerating={leftChat.isLoading || rightChat.isLoading}
       />
 
       {/* Main Content */}
@@ -556,7 +539,7 @@ export default function BattlePage() {
         {/* Header */}
         <header className="h-14 border-b border-border flex items-center justify-between px-4 md:px-6 pt-2 bg-background/80 backdrop-blur-md z-50 sticky top-0">
           <div className="flex items-center gap-3">
-            {!alwaysShowSidebar && (
+            {autoHideSidebar && (
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="p-2 rounded-lg hover:bg-accent transition-colors"
@@ -566,9 +549,9 @@ export default function BattlePage() {
               </button>
             )}
             <div className="flex items-center gap-2">
-              <img 
-                src="/logo.png" 
-                alt="Logo" 
+              <img
+                src="/logo.png"
+                alt="Logo"
                 className="h-8 w-8 object-contain"
               />
               <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
@@ -600,8 +583,18 @@ export default function BattlePage() {
               <ShareConversation conversationId={currentConversationId} />
             )}
             <ThemeToggle />
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-lg hover:bg-accent transition-colors"
+              aria-label="Settings"
+            >
+              <SettingsIcon size={20} className="text-muted-foreground" />
+            </button>
           </div>
         </header>
+
+        {/* Settings Panel */}
+        <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
         {/* Model Conflict Alert */}
         {modelConflict && (
@@ -619,10 +612,11 @@ export default function BattlePage() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-foreground">Chat 1</span>
                 <div className={hasInteractionStarted ? 'opacity-50 pointer-events-none' : ''}>
-                  <ModelSelector 
+                  <ModelSelector
                     selectedModelId={leftModel}
                     onModelChange={setLeftModel}
                     onModelSelect={handleLeftModelSelect}
+                    align="left"
                   />
                 </div>
               </div>
@@ -641,10 +635,10 @@ export default function BattlePage() {
                 </div>
               )}
             </div>
-            <ChatInterface 
-              messages={leftChat.messages} 
-              isLoading={leftChat.isLoading} 
-              modelId={leftModel} 
+            <ChatInterface
+              messages={leftChat.messages}
+              isLoading={leftChat.isLoading}
+              modelId={leftModel}
             />
           </div>
 
@@ -654,10 +648,11 @@ export default function BattlePage() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-foreground">Chat 2</span>
                 <div className={hasInteractionStarted ? 'opacity-50 pointer-events-none' : ''}>
-                  <ModelSelector 
+                  <ModelSelector
                     selectedModelId={rightModel}
                     onModelChange={setRightModel}
                     onModelSelect={handleRightModelSelect}
+                    align="left"
                   />
                 </div>
               </div>
@@ -676,10 +671,10 @@ export default function BattlePage() {
                 </div>
               )}
             </div>
-            <ChatInterface 
-              messages={rightChat.messages} 
-              isLoading={rightChat.isLoading} 
-              modelId={rightModel} 
+            <ChatInterface
+              messages={rightChat.messages}
+              isLoading={rightChat.isLoading}
+              modelId={rightModel}
             />
           </div>
         </div>
@@ -695,7 +690,7 @@ export default function BattlePage() {
               leftChat.stop();
               rightChat.stop();
             }}
-            modelId={null}
+            modelId={undefined}
           />
         </div>
       </div>
@@ -708,9 +703,8 @@ function NavTab({ href, currentPath, children }: { href: string; currentPath: st
   return (
     <Link
       href={href}
-      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-        isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-      }`}
+      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+        }`}
     >
       {children}
     </Link>

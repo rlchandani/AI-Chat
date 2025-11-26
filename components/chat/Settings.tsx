@@ -185,10 +185,10 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                                     />
                                     <SettingToggle
                                         icon={PanelLeft}
-                                        label="Always Show Sidebar"
-                                        description="Keep the conversations sidebar always visible"
-                                        value={settings.alwaysShowSidebar}
-                                        onChange={(value) => handleSettingChange('alwaysShowSidebar', value)}
+                                        label="Auto-Hide Sidebar"
+                                        description="Automatically hide the sidebar when not in use"
+                                        value={settings.autoHideSidebar}
+                                        onChange={(value) => handleSettingChange('autoHideSidebar', value)}
                                     />
                                 </div>
                             </section>

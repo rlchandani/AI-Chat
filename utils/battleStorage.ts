@@ -383,49 +383,35 @@ export function saveBattleUsageStats(
     
     try {
         const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
+        
+        // Don't create new entries for usage stats - only update existing conversations
+        // This prevents orphaned storage entries
+        if (!stored) {
+            return;
+        }
+        
         let history: BattleHistory;
         
-        if (stored) {
-            try {
-                history = JSON.parse(stored);
-                if (!('leftMessages' in history)) {
-                    const oldHistory = history as any;
-                    history = {
-                        leftMessages: oldHistory.messages || [],
-                        rightMessages: [],
-                        leftModel: oldHistory.leftModel || modelId,
-                        rightModel: oldHistory.rightModel || modelId,
-                        lastUpdated: oldHistory.lastUpdated || Date.now(),
-                        conversationId,
-                        title: oldHistory.title || 'New Battle',
-                        createdAt: oldHistory.createdAt || Date.now(),
-                        leftUsageStats: oldHistory.usageStats,
-                        rightUsageStats: undefined,
-                    };
-                }
-            } catch (e) {
+        try {
+            history = JSON.parse(stored);
+            if (!('leftMessages' in history)) {
+                const oldHistory = history as any;
                 history = {
-                    leftMessages: [],
+                    leftMessages: oldHistory.messages || [],
                     rightMessages: [],
-                    leftModel: chatSide === 'left' ? modelId : '',
-                    rightModel: chatSide === 'right' ? modelId : '',
-                    lastUpdated: Date.now(),
+                    leftModel: oldHistory.leftModel || modelId,
+                    rightModel: oldHistory.rightModel || modelId,
+                    lastUpdated: oldHistory.lastUpdated || Date.now(),
                     conversationId,
-                    title: 'New Battle',
-                    createdAt: Date.now(),
+                    title: oldHistory.title || 'New Battle',
+                    createdAt: oldHistory.createdAt || Date.now(),
+                    leftUsageStats: oldHistory.usageStats,
+                    rightUsageStats: undefined,
                 };
             }
-        } else {
-            history = {
-                leftMessages: [],
-                rightMessages: [],
-                leftModel: chatSide === 'left' ? modelId : '',
-                rightModel: chatSide === 'right' ? modelId : '',
-                lastUpdated: Date.now(),
-                conversationId,
-                title: 'New Battle',
-                createdAt: Date.now(),
-            };
+        } catch (e) {
+            // If we can't parse the existing data, don't create orphaned entries
+            return;
         }
         
         const existingStats = (chatSide === 'left' ? history.leftUsageStats : history.rightUsageStats) || {
@@ -545,22 +531,55 @@ export function renameBattleConversation(conversationId: string, newTitle: strin
 export function deleteBattleConversation(conversationId: string): void {
     if (typeof window === 'undefined') return;
     
+    // Remove the conversation data
     localStorage.removeItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
     
+    // Remove from the list
     const conversationsList = getAllBattleConversationIds();
     const filtered = conversationsList.filter(id => id !== conversationId);
     localStorage.setItem(`${BATTLE_STORAGE_KEY}-list`, JSON.stringify(filtered));
+    
+    // Also clean up any orphaned battle entries not in the list
+    cleanupOrphanedBattleEntries();
     
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('battleConversationUpdated'));
     }
     
-    if (getCurrentBattleConversationId() === conversationId) {
-        if (filtered.length > 0) {
-            setCurrentBattleConversationId(filtered[0]);
-        } else {
-            createNewBattleConversation();
+    // Note: We don't auto-create a new conversation here anymore.
+    // The UI (sidebar) is responsible for handling what happens after delete.
+}
+
+/**
+ * Clean up any orphaned battle history entries that aren't in the conversation list
+ */
+export function cleanupOrphanedBattleEntries(): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+        const validIds = getAllBattleConversationIds();
+        const currentId = getCurrentBattleConversationId();
+        
+        // Collect all localStorage keys that are battle history entries
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(`${BATTLE_STORAGE_KEY}-battle-`)) {
+                // Extract the conversation ID from the key
+                const conversationId = key.replace(`${BATTLE_STORAGE_KEY}-`, '');
+                // If it's not in the list and not the current conversation, it's orphaned
+                if (!validIds.includes(conversationId) && conversationId !== currentId) {
+                    keysToRemove.push(key);
+                }
+            }
         }
+        
+        // Remove orphaned entries
+        keysToRemove.forEach(key => {
+            localStorage.removeItem(key);
+        });
+    } catch (error) {
+        console.error('Failed to cleanup orphaned battle entries:', error);
     }
 }
 
@@ -573,5 +592,23 @@ export function clearBattleHistory(conversationId?: string): void {
     const conversationsList = getAllBattleConversationIds();
     const filtered = conversationsList.filter(cid => cid !== id);
     localStorage.setItem(`${BATTLE_STORAGE_KEY}-list`, JSON.stringify(filtered));
+}
+
+/**
+ * Clear all battle history
+ */
+export function clearAllBattleHistory(): void {
+    if (typeof window === 'undefined') return;
+    
+    const conversationsList = getAllBattleConversationIds();
+    conversationsList.forEach(id => {
+        localStorage.removeItem(`${BATTLE_STORAGE_KEY}-${id}`);
+    });
+    localStorage.removeItem(`${BATTLE_STORAGE_KEY}-list`);
+    localStorage.removeItem(BATTLE_CONVERSATION_ID_KEY);
+    
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('battleConversationUpdated'));
+    }
 }
 
