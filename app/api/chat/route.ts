@@ -1,6 +1,6 @@
 import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
-import { streamText, tool } from 'ai';
+import { streamText } from 'ai';
 import { z } from 'zod';
 import { DEFAULT_MODEL, getModelInfo } from '@/utils/modelStorage';
 import {
@@ -142,26 +142,17 @@ function formatToolResultAsText(toolName: string, result: any): string {
     return '```json\n' + JSON.stringify(result, null, 2) + '\n```';
 }
 
-// Helper function to create a tool with proper typing
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createTool(config: { description: string; parameters: z.ZodObject<any>; execute: (args: any) => Promise<any> }) {
-    return tool({
-        description: config.description,
-        parameters: config.parameters,
-        execute: config.execute,
-    } as any);
-}
-
-// Define Yahoo Finance tools for AI SDK
+// Define Yahoo Finance tools for AI SDK v5 (compatible with both OpenAI and Google)
+// AI SDK v5 uses 'inputSchema' instead of 'parameters'
 const yahooFinanceTools = {
-    get_stock_quote: createTool({
+    get_stock_quote: {
         description: 'Get complete stock info: current price, daily change ($, %), YTD change ($, %), and comparison vs SPY (S&P 500). Use for ANY stock price query. REQUIRED: Extract ticker symbol. Example: "Apple stock" → symbol="AAPL"',
-        parameters: z.object({
-            symbol: z.string().min(1).describe('Stock ticker symbol. Examples: AAPL, GOOGL, MSFT, TSLA, AMZN, NVDA'),
+        inputSchema: z.object({
+            symbol: z.string().describe('Stock ticker symbol. Examples: AAPL, GOOGL, MSFT, TSLA, AMZN, NVDA'),
         }),
-        execute: async (args: any) => {
-            const ticker = args.symbol || args.ticker || args.stock || args.name;
-            if (!ticker || ticker.trim() === '') {
+        execute: async ({ symbol }: { symbol: string }) => {
+            const ticker = symbol?.trim();
+            if (!ticker) {
                 return { error: 'Missing stock symbol. Please ask about a specific stock like "What is Apple stock price?" or "TSLA price"' };
             }
             try {
@@ -171,35 +162,33 @@ const yahooFinanceTools = {
                 return { error: `Failed to fetch quote for ${ticker}: ${error instanceof Error ? error.message : 'Unknown error'}` };
             }
         },
-    }),
+    },
 
-    get_multiple_quotes: createTool({
+    get_multiple_quotes: {
         description: 'Get quotes for multiple stocks at once. Use for comparisons. Example: "Compare Apple and Microsoft" → symbols=["AAPL","MSFT"]',
-        parameters: z.object({
-            symbols: z.array(z.string().min(1)).min(1).describe('Array of ticker symbols. Example: ["AAPL", "GOOGL", "MSFT"]'),
+        inputSchema: z.object({
+            symbols: z.array(z.string()).describe('Array of ticker symbols. Example: ["AAPL", "GOOGL", "MSFT"]'),
         }),
-        execute: async (args: any) => {
-            const tickers = args.symbols || args.tickers;
-            if (!tickers || !Array.isArray(tickers) || tickers.length === 0) {
+        execute: async ({ symbols }: { symbols: string[] }) => {
+            if (!symbols || symbols.length === 0) {
                 return { error: 'Missing stock symbols. Please specify which stocks to compare.' };
             }
             try {
-                return await getMultipleStockQuotes(tickers);
+                return await getMultipleStockQuotes(symbols);
             } catch (error) {
                 console.error(`[Tool] get_multiple_quotes error:`, error);
                 return { error: `Failed to fetch quotes: ${error instanceof Error ? error.message : 'Unknown error'}` };
             }
         },
-    }),
+    },
 
-    search_stocks: createTool({
+    search_stocks: {
         description: 'Search for stock ticker by company name. Use when you do not know the ticker symbol for a company. Example: User asks about "Netflix" but you need ticker → query="Netflix"',
-        parameters: z.object({
-            query: z.string().min(1).describe('Company name or partial ticker to search. Examples: "Netflix", "Nvidia", "Amazon"'),
+        inputSchema: z.object({
+            query: z.string().describe('Company name or partial ticker to search. Examples: "Netflix", "Nvidia", "Amazon"'),
         }),
-        execute: async (args: any) => {
-            const query = args.query;
-            if (!query || query.trim() === '') {
+        execute: async ({ query }: { query: string }) => {
+            if (!query?.trim()) {
                 return { error: 'Missing search query. Please specify a company name.' };
             }
             try {
@@ -209,7 +198,7 @@ const yahooFinanceTools = {
                 return { error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
             }
         },
-    }),
+    },
 };
 
 // Allow streaming responses up to 60 seconds (tools may take longer)
@@ -301,14 +290,10 @@ export async function POST(req: Request) {
             );
         }
 
-        // Prepend system instructions
-        const systemPrompt = modelInfo.provider === 'google'
-            ? `${TOOL_USAGE_INSTRUCTIONS}\n\n${STOCK_CARD_INSTRUCTIONS}`
-            : STOCK_CARD_INSTRUCTIONS;
-
+        // Prepend system instructions (tools available for both Google and OpenAI)
         formattedMessages.unshift({
             role: 'system',
-            content: systemPrompt,
+            content: `${TOOL_USAGE_INSTRUCTIONS}\n\n${STOCK_CARD_INSTRUCTIONS}`,
         });
 
         // Use the model from modelInfo (already validated)
@@ -330,18 +315,13 @@ export async function POST(req: Request) {
             );
         }
 
-        // Configure streamText options with tools for Google models
-        const streamOptions = modelInfo.provider === 'google'
-            ? {
-                  model: aiModel,
-                  messages: formattedMessages,
-                  tools: yahooFinanceTools,
-                  maxSteps: 5, // Allow up to 5 tool calls per request
-              }
-            : {
-                  model: aiModel,
-                  messages: formattedMessages,
-              };
+        // Configure streamText options with tools (works for both Google and OpenAI)
+        const streamOptions = {
+            model: aiModel,
+            messages: formattedMessages,
+            tools: yahooFinanceTools,
+            maxSteps: 5, // Allow up to 5 tool calls per request
+        };
 
         const result = streamText(streamOptions);
 
