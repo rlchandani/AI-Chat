@@ -80,6 +80,11 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
         spyYtdChangePercent?: number;
     }
 
+    // Helper to safely parse numeric values from JSON
+    const parseNum = (val: any): number => (typeof val === 'number' ? val : parseFloat(val) || 0);
+    const parseNumOrUndefined = (val: any): number | undefined => 
+        val === undefined || val === null ? undefined : parseNum(val);
+
     const stockCardRegex = /<<STOCK_CARD>>([\s\S]*?)<<END_STOCK_CARD>>/g;
     const stockCards: StockCardData[] = [];
     let contentWithoutStockCards = cleanContent;
@@ -90,27 +95,12 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
             stockCards.push({
                 ticker: data.ticker || data.symbol || '',
                 name: data.name || data.companyName || '',
-                price: typeof data.price === 'number' ? data.price : parseFloat(data.price),
-                changePercent:
-                    typeof data.changePercent === 'number'
-                        ? data.changePercent
-                        : parseFloat(data.changePercent),
-                changeAmount:
-                    typeof data.changeAmount === 'number'
-                        ? data.changeAmount
-                        : parseFloat(data.changeAmount),
-                ytdChangePercent:
-                    typeof data.ytdChangePercent === 'number'
-                        ? data.ytdChangePercent
-                        : parseFloat(data.ytdChangePercent),
-                ytdChangeAmount:
-                    typeof data.ytdChangeAmount === 'number'
-                        ? data.ytdChangeAmount
-                        : parseFloat(data.ytdChangeAmount),
-                spyYtdChangePercent:
-                    typeof data.spyYtdChangePercent === 'number'
-                        ? data.spyYtdChangePercent
-                        : parseFloat(data.spyYtdChangePercent),
+                price: parseNum(data.price),
+                changePercent: parseNum(data.changePercent),
+                changeAmount: parseNum(data.changeAmount),
+                ytdChangePercent: parseNum(data.ytdChangePercent),
+                ytdChangeAmount: parseNum(data.ytdChangeAmount),
+                spyYtdChangePercent: parseNumOrUndefined(data.spyYtdChangePercent),
             });
             contentWithoutStockCards = contentWithoutStockCards.replace(stockMatch[0], '').trim();
         } catch (error) {
@@ -140,45 +130,14 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
             const data = JSON.parse(weatherMatch[1]);
             weatherCards.push({
                 location: data.location || data.city || data.name || '',
-                temperature:
-                    typeof data.temperature === 'number' ? data.temperature : parseFloat(data.temperature),
+                temperature: parseNum(data.temperature),
                 condition: data.condition || data.weather || data.description || '',
-                humidity:
-                    data.humidity !== undefined
-                        ? typeof data.humidity === 'number'
-                            ? data.humidity
-                            : parseFloat(data.humidity)
-                        : undefined,
-                windSpeed:
-                    data.windSpeed !== undefined
-                        ? typeof data.windSpeed === 'number'
-                            ? data.windSpeed
-                            : parseFloat(data.windSpeed)
-                        : undefined,
-                visibility:
-                    data.visibility !== undefined
-                        ? typeof data.visibility === 'number'
-                            ? data.visibility
-                            : parseFloat(data.visibility)
-                        : undefined,
-                feelsLike:
-                    data.feelsLike !== undefined
-                        ? typeof data.feelsLike === 'number'
-                            ? data.feelsLike
-                            : parseFloat(data.feelsLike)
-                        : undefined,
-                high:
-                    data.high !== undefined
-                        ? typeof data.high === 'number'
-                            ? data.high
-                            : parseFloat(data.high)
-                        : undefined,
-                low:
-                    data.low !== undefined
-                        ? typeof data.low === 'number'
-                            ? data.low
-                            : parseFloat(data.low)
-                        : undefined,
+                humidity: parseNumOrUndefined(data.humidity),
+                windSpeed: parseNumOrUndefined(data.windSpeed),
+                visibility: parseNumOrUndefined(data.visibility),
+                feelsLike: parseNumOrUndefined(data.feelsLike),
+                high: parseNumOrUndefined(data.high),
+                low: parseNumOrUndefined(data.low),
             });
             contentWithoutWeatherCards = contentWithoutWeatherCards.replace(weatherMatch[0], '').trim();
         } catch (error) {
@@ -263,7 +222,11 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                             name={card.name}
                             price={card.price}
                             changePercent={card.changePercent}
+                            changeAmount={card.changeAmount}
                             ytdChangePercent={card.ytdChangePercent}
+                            ytdChangeAmount={card.ytdChangeAmount}
+                            spyYtdChangePercent={card.spyYtdChangePercent}
+                            autoFetch={false}
                         />
                     ))}
 

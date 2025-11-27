@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, TrendingUp, RefreshCw } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2, TrendingUp } from 'lucide-react';
 
 interface StockQuoteCardProps {
     ticker: string;
@@ -46,10 +45,10 @@ export function StockQuoteCard({
                   ticker: initialTicker,
                   name: initialName || initialTicker,
                   price: initialPrice,
-                  changePercent: initialChangePercent || 0,
-                  changeAmount: initialChangeAmount || 0,
-                  ytdChangePercent: initialYtdChangePercent || 0,
-                  ytdChangeAmount: initialYtdChangeAmount || 0,
+                  changePercent: initialChangePercent ?? 0,
+                  changeAmount: initialChangeAmount ?? 0,
+                  ytdChangePercent: initialYtdChangePercent ?? 0,
+                  ytdChangeAmount: initialYtdChangeAmount ?? 0,
                   spyYtdChangePercent: initialSpyYtdChangePercent,
               }
             : null
@@ -159,44 +158,45 @@ export function StockQuoteCard({
     }
 
     const { ticker, name, price, changePercent, changeAmount, ytdChangePercent, ytdChangeAmount, spyYtdChangePercent } = stockData;
-    const normalizedChangeAmount =
-        Number.isFinite(changeAmount ?? NaN)
-            ? (changeAmount as number)
-            : Number.isFinite(price) && Number.isFinite(changePercent)
-              ? (price as number) * ((changePercent as number) / 100)
-              : undefined;
+    
+    // Helper to check if a number is valid and finite
+    const isValidNumber = (val: unknown): val is number => typeof val === 'number' && Number.isFinite(val);
 
-    const normalizedYtdAmount =
-        Number.isFinite(ytdChangeAmount ?? NaN)
-            ? (ytdChangeAmount as number)
-            : Number.isFinite(price) && Number.isFinite(ytdChangePercent)
-              ? (price as number) - (price as number) / (1 + (ytdChangePercent as number) / 100)
-              : undefined;
-
-    const normalizedSpyYtd = Number.isFinite(spyYtdChangePercent ?? NaN)
-        ? (spyYtdChangePercent as number)
-        : undefined;
-
-    const hasSpyYtd = typeof normalizedSpyYtd !== 'undefined';
-    const ytdVsSpy =
-        Number.isFinite(ytdChangePercent) && hasSpyYtd
-            ? (ytdChangePercent as number) - (normalizedSpyYtd as number)
+    // Calculate change amount - use provided value if non-zero, otherwise derive from price & percent
+    const normalizedChangeAmount = isValidNumber(changeAmount) && changeAmount !== 0
+        ? changeAmount
+        : isValidNumber(price) && isValidNumber(changePercent)
+            ? price * (changePercent / 100)
             : undefined;
+
+    // Calculate YTD amount - use provided value if non-zero, otherwise derive from price & percent
+    const normalizedYtdAmount = isValidNumber(ytdChangeAmount) && ytdChangeAmount !== 0
+        ? ytdChangeAmount
+        : isValidNumber(price) && isValidNumber(ytdChangePercent)
+            ? price - price / (1 + ytdChangePercent / 100)
+            : undefined;
+
+    // SPY YTD - treat 0 as valid since SPY can have 0% change
+    const normalizedSpyYtd = isValidNumber(spyYtdChangePercent) ? spyYtdChangePercent : undefined;
+    const hasSpyYtd = normalizedSpyYtd !== undefined;
+    
+    // Calculate YTD vs SPY comparison
+    const ytdVsSpy = isValidNumber(ytdChangePercent) && hasSpyYtd
+        ? ytdChangePercent - normalizedSpyYtd
+        : undefined;
 
     const isChangePositive = (changePercent ?? 0) >= 0;
     const isYtdPositive = (ytdChangePercent ?? 0) >= 0;
 
-    const formatPercent = (value: number) => {
-        const absolute = Math.abs(value).toFixed(2);
+    const formatPercent = (value: number): string => {
         const sign = value > 0 ? '+' : value < 0 ? '−' : '';
-        return `${sign}${absolute}%`;
+        return `${sign}${Math.abs(value).toFixed(2)}%`;
     };
 
-    const formatAmount = (value?: number) => {
-        if (!Number.isFinite(value ?? NaN)) return '—';
-        const absolute = Math.abs(value as number).toFixed(2);
-        const sign = (value as number) > 0 ? '+' : (value as number) < 0 ? '−' : '';
-        return `${sign}$${absolute}`;
+    const formatAmount = (value: number | undefined): string => {
+        if (!isValidNumber(value)) return '—';
+        const sign = value > 0 ? '+' : value < 0 ? '−' : '';
+        return `${sign}$${Math.abs(value).toFixed(2)}`;
     };
 
     return (
@@ -226,10 +226,10 @@ export function StockQuoteCard({
                         }`}
                     >
                         <span>{isChangePositive ? '▲' : '▼'}</span>
-                        {Number.isFinite(changePercent) ? formatPercent(changePercent as number) : '—'}
+                        {isValidNumber(changePercent) ? formatPercent(changePercent) : '—'}
                     </div>
                     <div className="text-xs text-foreground mt-1">
-                        {Number.isFinite(normalizedChangeAmount ?? NaN) ? formatAmount(normalizedChangeAmount) : '—'}
+                        {formatAmount(normalizedChangeAmount)}
                     </div>
                 </div>
                 <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
@@ -240,33 +240,32 @@ export function StockQuoteCard({
                         }`}
                     >
                         <span>{isYtdPositive ? '▲' : '▼'}</span>
-                        {Number.isFinite(ytdChangePercent) ? formatPercent(ytdChangePercent as number) : '—'}
+                        {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'}
                     </div>
                     <div className="text-xs text-foreground mt-1">
-                        {Number.isFinite(normalizedYtdAmount ?? NaN) ? formatAmount(normalizedYtdAmount) : '—'}
+                        {formatAmount(normalizedYtdAmount)}
                     </div>
                 </div>
             </div>
 
-            {(Number.isFinite(ytdChangePercent) || hasSpyYtd) && (
+            {(isValidNumber(ytdChangePercent) || hasSpyYtd) && (
                 <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
                     <div className="text-xs uppercase tracking-wide text-foreground">YTD vs SPY</div>
                     <div
                         className={`text-lg font-semibold flex items-center gap-1 ${
-                            typeof ytdVsSpy !== 'undefined'
+                            ytdVsSpy !== undefined
                                 ? ytdVsSpy >= 0
                                     ? 'text-green-600 dark:text-green-400'
                                     : 'text-red-600 dark:text-red-400'
                                 : 'text-foreground'
                         }`}
                     >
-                        {typeof ytdVsSpy !== 'undefined' && <span>{ytdVsSpy >= 0 ? '▲' : '▼'}</span>}
-                        {typeof ytdVsSpy !== 'undefined' ? formatPercent(ytdVsSpy) : '—'}
+                        {ytdVsSpy !== undefined && <span>{ytdVsSpy >= 0 ? '▲' : '▼'}</span>}
+                        {ytdVsSpy !== undefined ? formatPercent(ytdVsSpy) : '—'}
                     </div>
                     <div className="text-xs text-foreground mt-1">
-                        Stock YTD:{' '}
-                        {Number.isFinite(ytdChangePercent) ? formatPercent(ytdChangePercent as number) : '—'} • SPY YTD:{' '}
-                        {hasSpyYtd ? formatPercent(normalizedSpyYtd as number) : 'Unavailable'}
+                        Stock YTD: {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'} • SPY YTD:{' '}
+                        {hasSpyYtd ? formatPercent(normalizedSpyYtd) : 'Unavailable'}
                     </div>
                 </div>
             )}

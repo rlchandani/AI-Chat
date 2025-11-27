@@ -1,9 +1,16 @@
 import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+import { streamText, tool } from 'ai';
+import { z } from 'zod';
 import { DEFAULT_MODEL, getModelInfo } from '@/utils/modelStorage';
+import {
+    getStockQuoteWithYTD,
+    getMultipleStockQuotes,
+    searchStocks,
+} from '@/mcp/yahoo-finance-tools';
 
-const STOCK_CARD_INSTRUCTIONS = `Whenever the user asks about a stock/ticker/market performance, add a structured stock card before your main explanation.
+// System instructions for structured card output
+const STOCK_CARD_INSTRUCTIONS = `When you receive stock data from tools, format the response with a structured stock card.
 Use this exact JSON envelope (valid JSON, one block per stock):
 <<STOCK_CARD>>{"ticker":"AAPL","name":"Apple Inc.","price":191.45,"changePercent":1.23,"changeAmount":2.34,"ytdChangePercent":8.90,"ytdChangeAmount":14.22,"spyYtdChangePercent":15.30}<<END_STOCK_CARD>>
 - ticker: uppercase ticker symbol
@@ -11,27 +18,214 @@ Use this exact JSON envelope (valid JSON, one block per stock):
 - price: latest price in USD
 - changePercent: today's % move vs prior close
 - changeAmount: today's $ move vs prior close
-- ytdChangePercent: year-to-date % change
-- ytdChangeAmount: year-to-date $ change (derive it if needed)
-- spyYtdChangePercent: SPY (S&P 500 ETF) YTD % change (always include it for comparison)
-If a value is missing, compute a reasonable estimate (e.g., changeAmount ≈ price * changePercent / 100) or output 0.00. Emit the block before your narrative, then continue with the natural-language analysis.`;
+- ytdChangePercent: year-to-date % change (if available)
+- ytdChangeAmount: year-to-date $ change (if available)
+- spyYtdChangePercent: SPY (S&P 500 ETF) YTD % change for comparison (if available)
+Emit the stock card block first, then follow with your natural-language analysis.`;
 
-const WEATHER_CARD_INSTRUCTIONS = `Whenever the user asks about weather/forecast/current conditions, add a structured weather card before your main explanation.
-Use this exact JSON envelope (valid JSON, one block per location):
-<<WEATHER_CARD>>{"location":"New York, NY","temperature":72,"condition":"Partly Cloudy","humidity":65,"windSpeed":8,"visibility":10,"feelsLike":75,"high":78,"low":65}<<END_WEATHER_CARD>>
-- location: city name or location (e.g., "New York, NY" or "San Francisco")
-- temperature: current temperature in Fahrenheit
-- condition: weather condition description (e.g., "Sunny", "Partly Cloudy", "Rain", "Snow")
-- humidity: humidity percentage (0-100, optional)
-- windSpeed: wind speed in mph (optional)
-- visibility: visibility in miles (optional)
-- feelsLike: "feels like" temperature in Fahrenheit (optional)
-- high: high temperature for the day in Fahrenheit (optional)
-- low: low temperature for the day in Fahrenheit (optional)
-Only emit the block when confident in the weather data, then follow with normal narrative analysis.`;
+const TOOL_USAGE_INSTRUCTIONS = `You have access to stock market tools. When a user asks about stocks, stock prices, or market performance:
 
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+CRITICAL RULES FOR TOOL CALLS:
+1. ALWAYS extract the ticker symbol from the user's message before calling a tool
+2. Common ticker symbols: AAPL (Apple), GOOGL (Google), MSFT (Microsoft), TSLA (Tesla), AMZN (Amazon), META (Facebook), NVDA (Nvidia)
+3. When calling get_stock_quote, you MUST provide the "symbol" parameter with the actual ticker
+4. NEVER call a tool without providing the required parameters
+
+AVAILABLE TOOLS:
+- get_stock_quote: Get complete stock info including price, daily change ($, %), YTD change ($, %), and SPY comparison
+- get_multiple_quotes: Compare multiple stocks with all their data
+- search_stocks: Find ticker symbol from company name
+
+EXAMPLE TOOL CALLS:
+- User: "What's Apple stock at?" → Call get_stock_quote with symbol="AAPL"
+- User: "How is Tesla doing?" → Call get_stock_quote with symbol="TSLA"
+- User: "Compare Google and Microsoft" → Call get_multiple_quotes with symbols=["GOOGL","MSFT"]
+- User: "Find Netflix stock" → Call search_stocks with query="Netflix"
+
+AFTER RECEIVING TOOL RESULTS:
+You MUST generate a text response that includes:
+1. The <<STOCK_CARD>> JSON block with ALL fields (ticker, name, price, changePercent, changeAmount, ytdChangePercent, ytdChangeAmount, spyYtdChangePercent)
+2. A natural language summary covering:
+   - Current price
+   - Today's change ($ and %)
+   - YTD performance ($ and %)
+   - Comparison to S&P 500 (SPY) - whether stock is outperforming or underperforming
+3. Any relevant analysis
+
+NEVER just call a tool and stop. ALWAYS follow up with a complete text response.`;
+
+// Helper function to format tool results as readable text when model doesn't generate response
+function formatToolResultAsText(toolName: string, result: any): string {
+    if (!result) return 'Unable to fetch data.';
+    
+    // Handle error responses
+    if (result.error) {
+        return result.error;
+    }
+    
+    // Handle single stock quote (always includes YTD data now)
+    if (toolName === 'get_stock_quote') {
+        const q = result;
+        
+        // Normalize all numeric values
+        const price = Number(q.price) || 0;
+        const changePercent = Number(q.changePercent) || 0;
+        const changeAmount = Number(q.change) || 0;
+        const ytdChangePercent = Number(q.ytdChangePercent) || 0;
+        const ytdChangeAmount = Number(q.ytdChangeAmount) || 0;
+        const spyYtdChangePercent = Number(q.spyYtdChangePercent) || 0;
+        
+        // Helper to format with sign
+        const formatWithSign = (val: number) => (val >= 0 ? '+' : '') + val.toFixed(2);
+        
+        // Generate stock card JSON
+        const stockCard = `<<STOCK_CARD>>{"ticker":"${q.ticker}","name":"${q.name}","price":${price},"changePercent":${changePercent},"changeAmount":${changeAmount},"ytdChangePercent":${ytdChangePercent},"ytdChangeAmount":${ytdChangeAmount},"spyYtdChangePercent":${spyYtdChangePercent}}<<END_STOCK_CARD>>\n\n`;
+        
+        // Build response
+        let response = stockCard;
+        response += `**${q.name} (${q.ticker})**\n\n`;
+        response += `💰 **Current Price:** $${price.toFixed(2)}\n\n`;
+        response += `**Today's Performance:**\n`;
+        response += `📊 Change: ${formatWithSign(changeAmount).replace(/^([+-])/, '$1$')} (${formatWithSign(changePercent)}%)\n\n`;
+        response += `**Year-to-Date (YTD) Performance:**\n`;
+        response += `📈 YTD Change: ${formatWithSign(ytdChangeAmount).replace(/^([+-])/, '$1$')} (${formatWithSign(ytdChangePercent)}%)\n`;
+        
+        if (spyYtdChangePercent !== 0) {
+            const outperformance = ytdChangePercent - spyYtdChangePercent;
+            response += `📉 S&P 500 (SPY) YTD: ${formatWithSign(spyYtdChangePercent)}%\n`;
+            response += `⚡ vs SPY: ${formatWithSign(outperformance)}% (${outperformance >= 0 ? 'outperforming' : 'underperforming'})\n`;
+        }
+        
+        response += `\n*Market: ${q.exchange || 'N/A'} | Currency: ${q.currency || 'USD'}*`;
+        return response;
+    }
+    
+    // Handle multiple quotes (now includes YTD data)
+    if (toolName === 'get_multiple_quotes' && Array.isArray(result)) {
+        let response = '';
+        for (const q of result) {
+            response += `<<STOCK_CARD>>{"ticker":"${q.ticker}","name":"${q.name}","price":${q.price},"changePercent":${q.changePercent || 0},"changeAmount":${q.change || 0},"ytdChangePercent":${q.ytdChangePercent || 0},"ytdChangeAmount":${q.ytdChangeAmount || 0},"spyYtdChangePercent":${q.spyYtdChangePercent || 0}}<<END_STOCK_CARD>>\n`;
+        }
+        response += '\n**Stock Comparison:**\n\n';
+        
+        // Get SPY YTD for reference (from first result that has it)
+        const spyYtd = result.find(q => q.spyYtdChangePercent !== undefined)?.spyYtdChangePercent;
+        
+        for (const q of result) {
+            const changeSign = (q.change || 0) >= 0 ? '+' : '';
+            const ytdSign = (q.ytdChangePercent || 0) >= 0 ? '+' : '';
+            response += `**${q.ticker}** (${q.name})\n`;
+            response += `  💰 Price: $${q.price.toFixed(2)} | Today: ${changeSign}${(q.changePercent || 0).toFixed(2)}% | YTD: ${ytdSign}${(q.ytdChangePercent || 0).toFixed(2)}%\n\n`;
+        }
+        
+        if (spyYtd !== undefined) {
+            const spySign = spyYtd >= 0 ? '+' : '';
+            response += `\n*S&P 500 (SPY) YTD: ${spySign}${spyYtd.toFixed(2)}%*`;
+        }
+        
+        return response;
+    }
+    
+    // Handle search results
+    if (toolName === 'search_stocks' && Array.isArray(result)) {
+        if (result.length === 0) {
+            return 'No stocks found matching your search.';
+        }
+        let response = 'Found the following stocks:\n\n';
+        for (const s of result.slice(0, 5)) {
+            response += `- **${s.symbol}**: ${s.name} (${s.exchange})\n`;
+        }
+        return response;
+    }
+    
+    // Fallback: return JSON
+    return '```json\n' + JSON.stringify(result, null, 2) + '\n```';
+}
+
+// Helper function to create a tool with proper typing
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createTool(config: { description: string; parameters: z.ZodObject<any>; execute: (args: any) => Promise<any> }) {
+    return tool({
+        description: config.description,
+        parameters: config.parameters,
+        execute: config.execute,
+    } as any);
+}
+
+// Define Yahoo Finance tools for AI SDK
+const yahooFinanceTools = {
+    get_stock_quote: createTool({
+        description: 'Get complete stock info: current price, daily change ($, %), YTD change ($, %), and comparison vs SPY (S&P 500). Use for ANY stock price query. REQUIRED: Extract ticker symbol. Example: "Apple stock" → symbol="AAPL"',
+        parameters: z.object({
+            symbol: z.string().min(1).describe('Stock ticker symbol. Examples: AAPL, GOOGL, MSFT, TSLA, AMZN, NVDA'),
+        }),
+        execute: async (args: any) => {
+            console.log(`[Tool] get_stock_quote received args:`, JSON.stringify(args));
+            const ticker = args.symbol || args.ticker || args.stock || args.name;
+            if (!ticker || ticker.trim() === '') {
+                console.error(`[Tool] get_stock_quote error: No ticker provided. Args:`, args);
+                return { error: 'Missing stock symbol. Please ask about a specific stock like "What is Apple stock price?" or "TSLA price"' };
+            }
+            console.log(`[Tool] get_stock_quote called with ticker: ${ticker}`);
+            try {
+                // Always fetch full data including YTD and SPY comparison
+                const quote = await getStockQuoteWithYTD(ticker);
+                console.log(`[Tool] get_stock_quote result:`, quote);
+                return quote;
+            } catch (error) {
+                console.error(`[Tool] get_stock_quote error:`, error);
+                return { error: `Failed to fetch quote for ${ticker}: ${error instanceof Error ? error.message : 'Unknown error'}` };
+            }
+        },
+    }),
+
+    get_multiple_quotes: createTool({
+        description: 'Get quotes for multiple stocks at once. Use for comparisons. Example: "Compare Apple and Microsoft" → symbols=["AAPL","MSFT"]',
+        parameters: z.object({
+            symbols: z.array(z.string().min(1)).min(1).describe('Array of ticker symbols. Example: ["AAPL", "GOOGL", "MSFT"]'),
+        }),
+        execute: async (args: any) => {
+            const tickers = args.symbols || args.tickers;
+            if (!tickers || !Array.isArray(tickers) || tickers.length === 0) {
+                return { error: 'Missing stock symbols. Please specify which stocks to compare.' };
+            }
+            console.log(`[Tool] get_multiple_quotes called with tickers:`, tickers);
+            try {
+                const quotes = await getMultipleStockQuotes(tickers);
+                console.log(`[Tool] get_multiple_quotes result: ${quotes.length} quotes`);
+                return quotes;
+            } catch (error) {
+                console.error(`[Tool] get_multiple_quotes error:`, error);
+                return { error: `Failed to fetch quotes: ${error instanceof Error ? error.message : 'Unknown error'}` };
+            }
+        },
+    }),
+
+    search_stocks: createTool({
+        description: 'Search for stock ticker by company name. Use when you do not know the ticker symbol for a company. Example: User asks about "Netflix" but you need ticker → query="Netflix"',
+        parameters: z.object({
+            query: z.string().min(1).describe('Company name or partial ticker to search. Examples: "Netflix", "Nvidia", "Amazon"'),
+        }),
+        execute: async (args: any) => {
+            const query = args.query;
+            if (!query || query.trim() === '') {
+                return { error: 'Missing search query. Please specify a company name.' };
+            }
+            console.log(`[Tool] search_stocks called with query: ${query}`);
+            try {
+                const results = await searchStocks(query);
+                console.log(`[Tool] search_stocks result: ${results.length} matches`);
+                return results;
+            } catch (error) {
+                console.error(`[Tool] search_stocks error:`, error);
+                return { error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+            }
+        },
+    }),
+};
+
+// Allow streaming responses up to 60 seconds (tools may take longer)
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
     try {
@@ -97,9 +291,9 @@ export async function POST(req: Request) {
 
         // Transform messages: remove id, toolInvocations, and filter out invalid roles
         const formattedMessages = messages
-            .filter((msg: any) => 
-                msg && 
-                typeof msg === 'object' && 
+            .filter((msg: any) =>
+                msg &&
+                typeof msg === 'object' &&
                 ['user', 'assistant', 'system'].includes(msg.role) &&
                 typeof msg.content === 'string' &&
                 msg.content.trim().length > 0
@@ -119,10 +313,14 @@ export async function POST(req: Request) {
             );
         }
 
-        // Prepend system instructions (ensures structured stock and weather data when needed)
+        // Prepend system instructions
+        const systemPrompt = modelInfo.provider === 'google'
+            ? `${TOOL_USAGE_INSTRUCTIONS}\n\n${STOCK_CARD_INSTRUCTIONS}`
+            : STOCK_CARD_INSTRUCTIONS;
+
         formattedMessages.unshift({
             role: 'system',
-            content: `${STOCK_CARD_INSTRUCTIONS}\n\n${WEATHER_CARD_INSTRUCTIONS}`,
+            content: systemPrompt,
         });
 
         // Use the model from modelInfo (already validated)
@@ -133,10 +331,6 @@ export async function POST(req: Request) {
         if (modelInfo.provider === 'google') {
             aiModel = google(selectedModel);
         } else if (modelInfo.provider === 'openai') {
-            // The AI SDK accepts the model ID directly, so we can use it as-is
-            // Current OpenAI models: gpt-5.1, gpt-5-mini, gpt-5-pro
-            // Note: Some models may have version suffixes like -2024-11-20
-            // The AI SDK will handle the model name as provided
             aiModel = openai(selectedModel);
         } else {
             return new Response(
@@ -148,46 +342,97 @@ export async function POST(req: Request) {
             );
         }
 
-        const result = streamText({
-            model: aiModel,
-            messages: formattedMessages,
-        });
+        // Configure streamText options with tools for Google models
+        const streamOptions = modelInfo.provider === 'google'
+            ? {
+                  model: aiModel,
+                  messages: formattedMessages,
+                  tools: yahooFinanceTools,
+                  maxSteps: 5, // Allow up to 5 tool calls per request
+              }
+            : {
+                  model: aiModel,
+                  messages: formattedMessages,
+              };
 
-        // Create a readable stream from the textStream async iterator
-        // We'll send usage info after the stream completes
+        const result = streamText(streamOptions);
+
+        // Create a readable stream from the fullStream async iterator
+        // fullStream includes all events: text-delta, tool-call, tool-result, finish, etc.
         const encoder = new TextEncoder();
+        let isClosed = false;
         const stream = new ReadableStream({
             async start(controller) {
                 try {
-                    // Stream the text content
-                    for await (const textPart of result.textStream) {
-                        controller.enqueue(encoder.encode(textPart));
-                    }
+                    // Track whether any text was generated and store tool results
+                    let hasGeneratedText = false;
+                    let lastToolResult: any = null;
+                    let lastToolName: string = '';
                     
-                    // After streaming completes, wait for usage info and send it
-                    try {
-                        const usage = await result.usage;
-                        if (usage) {
-                            // Send usage info as a special marker followed by JSON
-                            const usageData = JSON.stringify({
-                                type: 'usage',
-                                usage: {
-                                    promptTokens: usage.promptTokens || 0,
-                                    completionTokens: usage.completionTokens || 0,
-                                    totalTokens: usage.totalTokens || 0,
-                                }
-                            });
-                            // Send usage info at the end
-                            controller.enqueue(encoder.encode(`\n\n__USAGE__${usageData}__USAGE__`));
+                    // Use fullStream to capture all text from all steps (including after tool calls)
+                    for await (const part of result.fullStream) {
+                        if (isClosed) break;
+                        
+                        // Stream text-delta events to the client
+                        if (part.type === 'text-delta') {
+                            const textContent = (part as any).text || (part as any).textDelta || '';
+                            if (textContent) {
+                                hasGeneratedText = true;
+                                controller.enqueue(encoder.encode(textContent));
+                            }
                         }
-                    } catch (usageError) {
-                        console.error('Error getting usage info:', usageError);
+                        // Capture tool results
+                        else if (part.type === 'tool-result') {
+                            const toolPart = part as any;
+                            lastToolName = toolPart.toolName;
+                            // AI SDK might use 'result' or 'output' for the tool result
+                            lastToolResult = toolPart.result || toolPart.output;
+                            console.log(`[Stream] Tool result for: ${toolPart.toolName}`, JSON.stringify(lastToolResult));
+                        }
+                        else if (part.type === 'finish') {
+                            console.log(`[Stream] Finish event. hasGeneratedText: ${hasGeneratedText}, lastToolResult: ${!!lastToolResult}`);
+                            // If no text was generated but we have tool results, format and stream them
+                            if (!hasGeneratedText && lastToolResult) {
+                                console.log(`[Stream] Model did not generate text, formatting tool result as response`);
+                                const formattedResponse = formatToolResultAsText(lastToolName, lastToolResult);
+                                controller.enqueue(encoder.encode(formattedResponse));
+                            }
+                        }
                     }
-                    
-                    controller.close();
+
+                    // After streaming completes, wait for usage info and send it
+                    if (!isClosed) {
+                        try {
+                            const usage = await result.usage as any;
+                            if (usage && !isClosed) {
+                                // Send usage info as a special marker followed by JSON
+                                // AI SDK v5 may use different property names
+                                const usageData = JSON.stringify({
+                                    type: 'usage',
+                                    usage: {
+                                        promptTokens: usage.promptTokens || usage.inputTokens || 0,
+                                        completionTokens: usage.completionTokens || usage.outputTokens || 0,
+                                        totalTokens: usage.totalTokens || (usage.inputTokens || 0) + (usage.outputTokens || 0),
+                                    }
+                                });
+                                // Send usage info at the end
+                                controller.enqueue(encoder.encode(`\n\n__USAGE__${usageData}__USAGE__`));
+                            }
+                        } catch (usageError) {
+                            console.error('Error getting usage info:', usageError);
+                        }
+                    }
+
+                    if (!isClosed) {
+                        isClosed = true;
+                        controller.close();
+                    }
                 } catch (error) {
                     console.error('Stream error:', error);
-                    controller.error(error);
+                    if (!isClosed) {
+                        isClosed = true;
+                        controller.error(error);
+                    }
                 }
             },
         });
