@@ -222,7 +222,7 @@ export async function GET(req: NextRequest) {
     // Fetch weather data using Google Weather API
     // Google Weather API uses REST endpoints with location object
     const unitsSystem = unitType === 'metric' ? 'METRIC' : 'IMPERIAL';
-    const weatherUrl = `https://weather.googleapis.com/v1/currentConditions:lookup?location.latitude=${lat}&location.longitude=${lon}&key=${GOOGLE_API_KEY}`;
+    const weatherUrl = `https://weather.googleapis.com/v1/currentConditions:lookup?location.latitude=${lat}&location.longitude=${lon}&unitsSystem=${unitsSystem}&key=${GOOGLE_API_KEY}`;
     const forecastUrl = `https://weather.googleapis.com/v1/forecast/hours:lookup?location.latitude=${lat}&location.longitude=${lon}&hours=12&unitsSystem=${unitsSystem}&key=${GOOGLE_API_KEY}`;
 
     const weatherResponse = await fetch(weatherUrl);

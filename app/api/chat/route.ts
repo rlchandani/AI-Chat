@@ -8,6 +8,11 @@ import {
     getMultipleStockQuotes,
     searchStocks,
 } from '@/mcp/yahoo-finance-tools';
+import {
+    getWeather,
+    getMultipleWeather,
+    searchLocations,
+} from '@/mcp/weather-tools';
 
 // System instructions for structured card output
 const STOCK_CARD_INSTRUCTIONS = `When you receive stock data from tools, format the response with a structured stock card.
@@ -23,34 +28,68 @@ Use this exact JSON envelope (valid JSON, one block per stock):
 - spyYtdChangePercent: SPY (S&P 500 ETF) YTD % change for comparison (if available)
 Emit the stock card block first, then follow with your natural-language analysis.`;
 
-const TOOL_USAGE_INSTRUCTIONS = `You have access to stock market tools. When a user asks about stocks, stock prices, or market performance:
+const WEATHER_CARD_INSTRUCTIONS = `When you receive weather data from tools, format the response with a structured weather card.
+Use this exact JSON envelope (valid JSON, one block per location):
+<<WEATHER_CARD>>{"location":"San Francisco, CA","temperature":68,"condition":"Partly Cloudy","humidity":65,"windSpeed":12,"visibility":10,"feelsLike":66,"high":72,"low":58,"uvIndex":5,"aqi":42}<<END_WEATHER_CARD>>
+- location: city/location name
+- temperature: current temperature (in F for imperial, C for metric)
+- condition: weather condition description
+- humidity: humidity percentage (optional)
+- windSpeed: wind speed in mph/km/h (optional)
+- visibility: visibility in miles/km (optional)
+- feelsLike: feels like temperature (optional)
+- high: daily high temperature (optional)
+- low: daily low temperature (optional)
+- uvIndex: UV index (optional)
+- aqi: air quality index (optional)
+Emit the weather card block first, then follow with your natural-language analysis.`;
 
-CRITICAL RULES FOR TOOL CALLS:
+const TOOL_USAGE_INSTRUCTIONS = `You have access to stock market and weather tools.
+
+=== STOCK TOOLS ===
+When a user asks about stocks, stock prices, or market performance:
+
+CRITICAL RULES FOR STOCK TOOL CALLS:
 1. ALWAYS extract the ticker symbol from the user's message before calling a tool
 2. Common ticker symbols: AAPL (Apple), GOOGL (Google), MSFT (Microsoft), TSLA (Tesla), AMZN (Amazon), META (Facebook), NVDA (Nvidia)
 3. When calling get_stock_quote, you MUST provide the "symbol" parameter with the actual ticker
 4. NEVER call a tool without providing the required parameters
 
-AVAILABLE TOOLS:
+STOCK TOOLS:
 - get_stock_quote: Get complete stock info including price, daily change ($, %), YTD change ($, %), and SPY comparison
 - get_multiple_quotes: Compare multiple stocks with all their data
 - search_stocks: Find ticker symbol from company name
 
-EXAMPLE TOOL CALLS:
+STOCK EXAMPLE CALLS:
 - User: "What's Apple stock at?" → Call get_stock_quote with symbol="AAPL"
 - User: "How is Tesla doing?" → Call get_stock_quote with symbol="TSLA"
 - User: "Compare Google and Microsoft" → Call get_multiple_quotes with symbols=["GOOGL","MSFT"]
-- User: "Find Netflix stock" → Call search_stocks with query="Netflix"
 
-AFTER RECEIVING TOOL RESULTS:
+AFTER RECEIVING STOCK TOOL RESULTS:
 You MUST generate a text response that includes:
-1. The <<STOCK_CARD>> JSON block with ALL fields (ticker, name, price, changePercent, changeAmount, ytdChangePercent, ytdChangeAmount, spyYtdChangePercent)
+1. The <<STOCK_CARD>> JSON block with ALL fields
+2. A natural language summary of the stock data
+
+=== WEATHER TOOLS ===
+When a user asks about weather, temperature, or conditions:
+
+WEATHER TOOLS:
+- get_weather: Get current weather for a location including temperature, conditions, humidity, wind, UV index, and AQI
+- get_multiple_weather: Compare weather across multiple locations
+- search_locations: Find location names for ambiguous queries
+
+WEATHER EXAMPLE CALLS:
+- User: "What's the weather in New York?" → Call get_weather with location="New York"
+- User: "How's the weather in Tokyo?" → Call get_weather with location="Tokyo, Japan"
+- User: "Compare weather in LA and SF" → Call get_multiple_weather with locations=["Los Angeles, CA","San Francisco, CA"]
+
+AFTER RECEIVING WEATHER TOOL RESULTS:
+You MUST generate a text response that includes:
+1. The <<WEATHER_CARD>> JSON block with ALL available fields (location, temperature, condition, humidity, windSpeed, visibility, feelsLike, high, low, uvIndex, aqi)
 2. A natural language summary covering:
-   - Current price
-   - Today's change ($ and %)
-   - YTD performance ($ and %)
-   - Comparison to S&P 500 (SPY) - whether stock is outperforming or underperforming
-3. Any relevant analysis
+   - Current temperature and conditions
+   - High/low for the day
+   - Any notable weather factors (UV, AQI, humidity)
 
 NEVER just call a tool and stop. ALWAYS follow up with a complete text response.`;
 
@@ -138,13 +177,82 @@ function formatToolResultAsText(toolName: string, result: any): string {
         return response;
     }
     
+    // Handle single weather result
+    if (toolName === 'get_weather') {
+        const w = result;
+        
+        // Generate weather card JSON
+        const weatherCard = `<<WEATHER_CARD>>{"location":"${w.location}","temperature":${w.temperature},"condition":"${w.condition}","humidity":${w.humidity || 'null'},"windSpeed":${w.windSpeed || 'null'},"visibility":${w.visibility || 'null'},"feelsLike":${w.feelsLike || 'null'},"high":${w.high || 'null'},"low":${w.low || 'null'},"uvIndex":${w.uvIndex || 'null'},"aqi":${w.aqi || 'null'}}<<END_WEATHER_CARD>>\n\n`;
+        
+        // Build response
+        let response = weatherCard;
+        response += `**Weather in ${w.location}**\n\n`;
+        response += `🌡️ **Current:** ${w.temperature}°F - ${w.condition}\n\n`;
+        
+        if (w.high !== undefined && w.low !== undefined) {
+            response += `📊 **High/Low:** ${w.high}°F / ${w.low}°F\n`;
+        }
+        if (w.feelsLike !== undefined) {
+            response += `🤒 **Feels Like:** ${w.feelsLike}°F\n`;
+        }
+        if (w.humidity !== undefined) {
+            response += `💧 **Humidity:** ${w.humidity}%\n`;
+        }
+        if (w.windSpeed !== undefined) {
+            response += `💨 **Wind:** ${w.windSpeed} mph\n`;
+        }
+        if (w.uvIndex !== undefined) {
+            const uvLabel = w.uvIndex <= 2 ? 'Low' : w.uvIndex <= 5 ? 'Moderate' : w.uvIndex <= 7 ? 'High' : 'Very High';
+            response += `☀️ **UV Index:** ${w.uvIndex} (${uvLabel})\n`;
+        }
+        if (w.aqi !== undefined) {
+            const aqiLabel = w.aqi <= 50 ? 'Good' : w.aqi <= 100 ? 'Moderate' : w.aqi <= 150 ? 'Unhealthy for Sensitive' : 'Unhealthy';
+            response += `🌬️ **AQI:** ${w.aqi} (${aqiLabel})\n`;
+        }
+        
+        return response;
+    }
+    
+    // Handle multiple weather results
+    if (toolName === 'get_multiple_weather' && Array.isArray(result)) {
+        let response = '';
+        for (const w of result) {
+            response += `<<WEATHER_CARD>>{"location":"${w.location}","temperature":${w.temperature},"condition":"${w.condition}","humidity":${w.humidity || 'null'},"windSpeed":${w.windSpeed || 'null'},"visibility":${w.visibility || 'null'},"feelsLike":${w.feelsLike || 'null'},"high":${w.high || 'null'},"low":${w.low || 'null'},"uvIndex":${w.uvIndex || 'null'},"aqi":${w.aqi || 'null'}}<<END_WEATHER_CARD>>\n`;
+        }
+        response += '\n**Weather Comparison:**\n\n';
+        
+        for (const w of result) {
+            response += `**${w.location}**\n`;
+            response += `  🌡️ ${w.temperature}°F - ${w.condition}`;
+            if (w.high !== undefined && w.low !== undefined) {
+                response += ` | High: ${w.high}°F, Low: ${w.low}°F`;
+            }
+            response += '\n\n';
+        }
+        
+        return response;
+    }
+    
+    // Handle location search results
+    if (toolName === 'search_locations' && Array.isArray(result)) {
+        if (result.length === 0) {
+            return 'No locations found matching your search.';
+        }
+        let response = 'Found the following locations:\n\n';
+        for (const loc of result.slice(0, 5)) {
+            response += `- **${loc.name}**: ${loc.formattedAddress}\n`;
+        }
+        return response;
+    }
+    
     // Fallback: return JSON
     return '```json\n' + JSON.stringify(result, null, 2) + '\n```';
 }
 
-// Define Yahoo Finance tools for AI SDK v5 (compatible with both OpenAI and Google)
+// Define all tools for AI SDK v5 (compatible with both OpenAI and Google)
 // AI SDK v5 uses 'inputSchema' instead of 'parameters'
-const yahooFinanceTools = {
+const aiTools = {
+    // Stock Tools
     get_stock_quote: {
         description: 'Get complete stock info: current price, daily change ($, %), YTD change ($, %), and comparison vs SPY (S&P 500). Use for ANY stock price query. REQUIRED: Extract ticker symbol. Example: "Apple stock" → symbol="AAPL"',
         inputSchema: z.object({
@@ -195,6 +303,62 @@ const yahooFinanceTools = {
                 return await searchStocks(query);
             } catch (error) {
                 console.error(`[Tool] search_stocks error:`, error);
+                return { error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+            }
+        },
+    },
+
+    // Weather Tools
+    get_weather: {
+        description: 'Get current weather for a location including temperature, conditions, humidity, wind speed, UV index, and air quality. Use for ANY weather query. Example: "Weather in New York" → location="New York"',
+        inputSchema: z.object({
+            location: z.string().describe('City name or location. Examples: "New York", "Tokyo, Japan", "London, UK", "San Francisco, CA"'),
+        }),
+        execute: async ({ location }: { location: string }) => {
+            const loc = location?.trim();
+            if (!loc) {
+                return { error: 'Missing location. Please ask about a specific location like "What is the weather in New York?"' };
+            }
+            try {
+                return await getWeather(loc);
+            } catch (error) {
+                console.error(`[Tool] get_weather error for ${loc}:`, error);
+                return { error: `Failed to fetch weather for ${loc}: ${error instanceof Error ? error.message : 'Unknown error'}` };
+            }
+        },
+    },
+
+    get_multiple_weather: {
+        description: 'Get weather for multiple locations at once. Use for comparisons. Example: "Compare weather in LA and NYC" → locations=["Los Angeles, CA","New York, NY"]',
+        inputSchema: z.object({
+            locations: z.array(z.string()).describe('Array of location names. Example: ["New York", "Los Angeles", "Chicago"]'),
+        }),
+        execute: async ({ locations }: { locations: string[] }) => {
+            if (!locations || locations.length === 0) {
+                return { error: 'Missing locations. Please specify which locations to compare.' };
+            }
+            try {
+                return await getMultipleWeather(locations);
+            } catch (error) {
+                console.error(`[Tool] get_multiple_weather error:`, error);
+                return { error: `Failed to fetch weather: ${error instanceof Error ? error.message : 'Unknown error'}` };
+            }
+        },
+    },
+
+    search_locations: {
+        description: 'Search for location names. Use when you need to clarify or find the exact location name. Example: User asks about "SF" → query="San Francisco"',
+        inputSchema: z.object({
+            query: z.string().describe('Location name or partial name to search. Examples: "San Francisco", "NYC", "Paris"'),
+        }),
+        execute: async ({ query }: { query: string }) => {
+            if (!query?.trim()) {
+                return { error: 'Missing search query. Please specify a location name.' };
+            }
+            try {
+                return await searchLocations(query);
+            } catch (error) {
+                console.error(`[Tool] search_locations error:`, error);
                 return { error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
             }
         },
@@ -293,7 +457,7 @@ export async function POST(req: Request) {
         // Prepend system instructions (tools available for both Google and OpenAI)
         formattedMessages.unshift({
             role: 'system',
-            content: `${TOOL_USAGE_INSTRUCTIONS}\n\n${STOCK_CARD_INSTRUCTIONS}`,
+            content: `${TOOL_USAGE_INSTRUCTIONS}\n\n${STOCK_CARD_INSTRUCTIONS}\n\n${WEATHER_CARD_INSTRUCTIONS}`,
         });
 
         // Use the model from modelInfo (already validated)
@@ -319,7 +483,7 @@ export async function POST(req: Request) {
         const streamOptions = {
             model: aiModel,
             messages: formattedMessages,
-            tools: yahooFinanceTools,
+            tools: aiTools,
             maxSteps: 5, // Allow up to 5 tool calls per request
         };
 

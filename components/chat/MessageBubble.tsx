@@ -119,6 +119,8 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
         feelsLike?: number;
         high?: number;
         low?: number;
+        uvIndex?: number;
+        aqi?: number;
     }
 
     const weatherCardRegex = /<<WEATHER_CARD>>([\s\S]*?)<<END_WEATHER_CARD>>/g;
@@ -138,6 +140,8 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                 feelsLike: parseNumOrUndefined(data.feelsLike),
                 high: parseNumOrUndefined(data.high),
                 low: parseNumOrUndefined(data.low),
+                uvIndex: parseNumOrUndefined(data.uvIndex),
+                aqi: parseNumOrUndefined(data.aqi),
             });
             contentWithoutWeatherCards = contentWithoutWeatherCards.replace(weatherMatch[0], '').trim();
         } catch (error) {
@@ -244,6 +248,9 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                             feelsLike={card.feelsLike}
                             high={card.high}
                             low={card.low}
+                            uvIndex={card.uvIndex}
+                            aqi={card.aqi}
+                            autoFetch={false}
                         />
                 ))}
 

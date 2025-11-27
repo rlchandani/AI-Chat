@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Eye, Loader2, Gauge, RefreshCw, MapPin, MapPinOff } from 'lucide-react';
+import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Eye, Loader2, Gauge, MapPin, MapPinOff, Share2, Check } from 'lucide-react';
 import clsx from 'clsx';
+import * as htmlToImage from 'html-to-image';
 
 interface WeatherCardProps {
     location?: string;
@@ -97,7 +98,10 @@ export function WeatherCard({
     const [locationPermission, setLocationPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
     const [isRequestingLocation, setIsRequestingLocation] = useState(false);
     const [autoLocationEnabled, setAutoLocationEnabled] = useState(useAutoLocation);
+    const [isSharing, setIsSharing] = useState(false);
+    const [shareSuccess, setShareSuccess] = useState(false);
     const hasFetchedRef = useRef(false);
+    const cardRef = useRef<HTMLDivElement>(null);
 
     const fetchWeather = async (locationToFetch?: string, latitude?: number, longitude?: number) => {
         const location = locationToFetch || weatherData?.location || initialLocation;
@@ -346,6 +350,81 @@ export function WeatherCard({
         }
     };
 
+    // Share card as image - Gold Standard implementation
+    const handleShare = useCallback(async () => {
+        if (!cardRef.current || isSharing) return;
+        
+        setIsSharing(true);
+        try {
+            const node = cardRef.current;
+            
+            // Wait for fonts to be ready
+            await document.fonts.ready;
+            
+            // Detect dark mode
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            const bgColor = isDarkMode ? '#1e293b' : '#f8fafc'; // slate-800 / slate-50
+            
+            // Capture the card as PNG blob
+            const blob = await htmlToImage.toBlob(node, {
+                pixelRatio: window.devicePixelRatio || 2,
+                backgroundColor: bgColor,
+                cacheBust: true,
+                width: node.scrollWidth,
+                height: node.scrollHeight,
+                style: { transform: 'none', margin: '0' },
+            });
+            
+            if (!blob) {
+                throw new Error('Failed to create image');
+            }
+
+            // Generate unique filename with date and time
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+            const locationSlug = (weatherData?.location || 'weather').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+            const fileName = `${locationSlug}-weather-${timestamp}.png`;
+
+            // Try Web Share API first
+            if (navigator.share && navigator.canShare) {
+                const file = new File([blob], fileName, { type: 'image/png' });
+                const shareData = {
+                    title: `Weather in ${weatherData?.location}`,
+                    text: `${weatherData?.location} - ${weatherData?.temperature}°${unitType === 'metric' ? 'C' : 'F'} ${weatherData?.condition}`,
+                    files: [file],
+                };
+
+                if (navigator.canShare(shareData)) {
+                    await navigator.share(shareData);
+                    setShareSuccess(true);
+                    setTimeout(() => setShareSuccess(false), 2000);
+                    return;
+                }
+            }
+
+            // Fallback: Download the image
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            setShareSuccess(true);
+            setTimeout(() => setShareSuccess(false), 2000);
+        } catch (err) {
+            // Silently ignore AbortError (user cancelled)
+            if (err instanceof Error && err.name === 'AbortError') {
+                return;
+            }
+            console.error('Share error:', err);
+        } finally {
+            setIsSharing(false);
+        }
+    }, [weatherData, unitType, isSharing]);
+
     useEffect(() => {
         // Only auto-fetch if autoFetch is true AND we don't have temperature data AND we haven't fetched yet
         if (autoFetch && initialTemperature === undefined && !hasFetchedRef.current) {
@@ -451,7 +530,28 @@ export function WeatherCard({
     };
 
     return (
-        <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-6 space-y-4 overflow-hidden relative flex flex-col">
+        <div className="relative">
+            {/* Share Button - positioned outside the captured area */}
+            <button
+                onClick={handleShare}
+                disabled={isSharing}
+                className="absolute -top-2 -right-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-all duration-200 disabled:opacity-50"
+                title={shareSuccess ? 'Shared!' : 'Share as image'}
+            >
+                {isSharing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                ) : shareSuccess ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                    <Share2 className="w-4 h-4" />
+                )}
+            </button>
+
+            {/* Card content - this gets captured as image */}
+            <div 
+                ref={cardRef}
+                className="w-full h-full rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 shadow-sm dark:shadow-md p-6 space-y-4 overflow-hidden relative flex flex-col"
+            >
             {/* Enhanced Animated background elements */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 {/* Rain particles */}
@@ -556,10 +656,10 @@ export function WeatherCard({
             <div className="relative z-10">
                 <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
                             <span>Location</span>
                             {isRequestingLocation && (
-                                <Loader2 className="w-3 h-3 animate-spin text-foreground/70" />
+                                <Loader2 className="w-3 h-3 animate-spin text-slate-500 dark:text-slate-400" />
                             )}
                             {autoLocationEnabled && locationPermission === 'granted' && !isRequestingLocation && (
                                 <span title="Using your location">
@@ -567,11 +667,11 @@ export function WeatherCard({
                                 </span>
                             )}
                         </div>
-                        <div className="text-2xl font-bold text-foreground">{location || 'Unknown'}</div>
+                        <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{location || 'Unknown'}</div>
                         {!autoLocationEnabled && (
                             <button
                                 onClick={handleToggleAutoLocation}
-                                className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
                                 title="Use your current location"
                             >
                                 <MapPin size={12} />
@@ -581,7 +681,7 @@ export function WeatherCard({
                         {autoLocationEnabled && (
                             <button
                                 onClick={handleToggleAutoLocation}
-                                className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
                                 title="Switch to manual location"
                             >
                                 <MapPinOff size={12} />
@@ -599,10 +699,10 @@ export function WeatherCard({
                         {getWeatherIcon()}
                     </div>
                     <div>
-                        <div className="text-5xl font-black tracking-tight text-foreground">
+                        <div className="text-5xl font-black tracking-tight text-slate-900 dark:text-slate-100">
                             {Number.isFinite(temperature) ? formatTemperature(temperature) : '—'}
                         </div>
-                        <div className="text-sm text-foreground capitalize">{condition || 'Unknown'}</div>
+                        <div className="text-sm text-slate-700 dark:text-slate-300 capitalize">{condition || 'Unknown'}</div>
                     </div>
                 </div>
             </div>
@@ -612,14 +712,14 @@ export function WeatherCard({
                 <div className="relative z-10 flex items-center gap-4 text-sm">
                     {high !== undefined && (
                         <div className="flex items-center gap-1">
-                            <span className="text-foreground">High:</span>
-                            <span className="font-semibold text-foreground">{formatTemperature(high)}</span>
+                            <span className="text-slate-700 dark:text-slate-300">High:</span>
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">{formatTemperature(high)}</span>
                         </div>
                     )}
                     {low !== undefined && (
                         <div className="flex items-center gap-1">
-                            <span className="text-foreground">Low:</span>
-                            <span className="font-semibold text-foreground">{formatTemperature(low)}</span>
+                            <span className="text-slate-700 dark:text-slate-300">Low:</span>
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">{formatTemperature(low)}</span>
                         </div>
                     )}
                 </div>
@@ -639,14 +739,14 @@ export function WeatherCard({
                                     <div
                                         key={`${hour.time}-${index}`}
                                         className={clsx(
-                                            'flex-shrink-0 rounded-lg border border-border/60 bg-transparent dark:bg-transparent p-1.5 min-w-[50px] text-center',
-                                            isNow && 'ring-1 ring-primary/50 border-primary/40 bg-primary/5'
+                                            'flex-shrink-0 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-1.5 min-w-[50px] text-center',
+                                            isNow && 'ring-1 ring-blue-400/50 border-blue-400/40 bg-blue-50 dark:bg-blue-900/30'
                                         )}
                                     >
-                                        <div className="text-[10px] text-muted-foreground mb-0.5">
+                                        <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-0.5">
                                             {isNow ? 'Now' : hourStr}
                                         </div>
-                                        <div className="text-sm font-semibold text-foreground">
+                                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                                             {formatTemperature(hour.temperature)}
                                         </div>
                                     </div>
@@ -660,73 +760,73 @@ export function WeatherCard({
             {/* Additional Details Grid */}
             <div className="relative z-10 grid grid-cols-2 gap-3">
                 {uvIndex !== undefined && (
-                    <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
                             <Sun size={12} />
                             <span>UV Index</span>
                         </div>
-                        <div className="text-lg font-semibold text-foreground">
+                        <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                             {uvIndex}
-                            <span className="text-xs ml-1 text-muted-foreground">
+                            <span className="text-xs ml-1 text-slate-500 dark:text-slate-400">
                                 {uvIndex <= 2 ? '(Low)' : uvIndex <= 5 ? '(Moderate)' : uvIndex <= 7 ? '(High)' : uvIndex <= 10 ? '(Very High)' : '(Extreme)'}
                             </span>
                         </div>
                     </div>
                 )}
                 {aqi !== undefined && (
-                    <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
                             <Gauge size={12} />
                             <span>AQI</span>
                         </div>
                         <div className={`text-lg font-semibold ${getAQICategory(aqi).color}`}>
                             {aqi}
-                            <span className="text-xs ml-1 text-muted-foreground">
+                            <span className="text-xs ml-1 text-slate-500 dark:text-slate-400">
                                 ({getAQICategory(aqi).label})
                             </span>
                         </div>
                     </div>
                 )}
                 {feelsLike !== undefined && (
-                    <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
                             <Thermometer size={12} />
                             <span>Feels Like</span>
                         </div>
-                        <div className="text-lg font-semibold text-foreground">
+                        <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                             {Number.isFinite(feelsLike) ? formatTemperature(feelsLike) : '—'}
                         </div>
                     </div>
                 )}
                 {windSpeed !== undefined && (
-                    <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
                             <Wind size={12} />
                             <span>Wind</span>
                         </div>
-                        <div className="text-lg font-semibold text-foreground">
+                        <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                             {Number.isFinite(windSpeed) ? formatWindSpeed(windSpeed) : '—'}
                         </div>
                     </div>
                 )}
                 {humidity !== undefined && (
-                    <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
                             <Droplets size={12} />
                             <span>Humidity</span>
                         </div>
-                        <div className="text-lg font-semibold text-foreground">
+                        <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                             {Number.isFinite(humidity) ? `${Math.round(humidity)}%` : '—'}
                         </div>
                     </div>
                 )}
                 {visibility !== undefined && (
-                    <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
                             <Eye size={12} />
                             <span>Visibility</span>
                         </div>
-                        <div className="text-lg font-semibold text-foreground">
+                        <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                             {Number.isFinite(visibility) ? formatVisibility(visibility) : '—'}
                         </div>
                     </div>
@@ -734,8 +834,9 @@ export function WeatherCard({
             </div>
 
 
-            <div className="relative z-10 text-[11px] uppercase tracking-wider text-foreground/80 text-right">
+            <div className="relative z-10 text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">
                 Sourced from Google
+            </div>
             </div>
         </div>
     );
