@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Send, Square, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -11,10 +11,44 @@ interface InputAreaProps {
     isLoading: boolean;
     stop: () => void;
     modelId?: string;
+    messageHistory?: string[]; // Previous user messages for up/down navigation
+    onInputSet?: (value: string) => void; // Callback to set input value directly
+    focusTrigger?: string | number; // When this changes, focus the textarea
 }
 
-export function InputArea({ input, handleInputChange, handleSubmit, isLoading, stop, modelId }: InputAreaProps) {
+export function InputArea({ 
+    input, 
+    handleInputChange, 
+    handleSubmit, 
+    isLoading, 
+    stop, 
+    modelId,
+    messageHistory = [],
+    onInputSet,
+    focusTrigger,
+}: InputAreaProps) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [historyIndex, setHistoryIndex] = useState(-1); // -1 means not browsing history
+    const [savedInput, setSavedInput] = useState(''); // Saves current input when starting to browse
+
+    // Auto-focus textarea when focusTrigger changes (conversation selected/created)
+    useEffect(() => {
+        if (focusTrigger !== undefined && textareaRef.current) {
+            // Small delay to ensure DOM is ready after conversation switch
+            const timeoutId = setTimeout(() => {
+                textareaRef.current?.focus();
+            }, 50);
+            return () => clearTimeout(timeoutId);
+        }
+    }, [focusTrigger]);
+
+    // Reset history index when a new message is sent (input becomes empty)
+    useEffect(() => {
+        if (input === '' && historyIndex !== -1) {
+            setHistoryIndex(-1);
+            setSavedInput('');
+        }
+    }, [input, historyIndex]);
 
     // Auto-resize textarea
     useEffect(() => {
@@ -24,12 +58,61 @@ export function InputArea({ input, handleInputChange, handleSubmit, isLoading, s
         }
     }, [input]);
 
+    const setInputValue = useCallback((value: string) => {
+        if (onInputSet) {
+            onInputSet(value);
+        } else {
+            // Fallback: create a synthetic change event
+            const syntheticEvent = {
+                target: { value },
+            } as React.ChangeEvent<HTMLTextAreaElement>;
+            handleInputChange(syntheticEvent);
+        }
+    }, [onInputSet, handleInputChange]);
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        // Handle Enter to submit
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            // Don't submit if already loading
             if (!isLoading) {
                 handleSubmit(e as any);
+            }
+            return;
+        }
+
+        // Handle Up/Down arrow for history navigation
+        if (messageHistory.length === 0) return;
+
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            
+            // Save current input when starting to browse history
+            if (historyIndex === -1) {
+                setSavedInput(input);
+            }
+            
+            // Move up in history (towards older messages)
+            const newIndex = historyIndex === -1 
+                ? messageHistory.length - 1 
+                : Math.max(0, historyIndex - 1);
+            
+            setHistoryIndex(newIndex);
+            setInputValue(messageHistory[newIndex]);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            
+            if (historyIndex === -1) return; // Not browsing history
+            
+            // Move down in history (towards newer messages)
+            const newIndex = historyIndex + 1;
+            
+            if (newIndex >= messageHistory.length) {
+                // Reached the end, restore saved input
+                setHistoryIndex(-1);
+                setInputValue(savedInput);
+            } else {
+                setHistoryIndex(newIndex);
+                setInputValue(messageHistory[newIndex]);
             }
         }
     };

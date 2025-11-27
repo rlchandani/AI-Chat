@@ -478,6 +478,9 @@ export default function Home() {
             isLoading={isLoading}
             stop={stop}
             modelId={selectedModel}
+            messageHistory={messages.filter(m => m.role === 'user').map(m => m.content)}
+            onInputSet={setInput}
+            focusTrigger={currentConversationId}
           />
         </div>
       </div>

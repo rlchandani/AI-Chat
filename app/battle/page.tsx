@@ -691,6 +691,9 @@ export default function BattlePage() {
               rightChat.stop();
             }}
             modelId={undefined}
+            messageHistory={leftChat.messages.filter(m => m.role === 'user').map(m => m.content)}
+            onInputSet={setInput}
+            focusTrigger={currentConversationId}
           />
         </div>
       </div>
