@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, TrendingUp } from 'lucide-react';
+import { Loader2, TrendingUp, Share2, Check } from 'lucide-react';
+import * as htmlToImage from 'html-to-image';
 
 interface StockQuoteCardProps {
     ticker: string;
@@ -57,51 +58,112 @@ export function StockQuoteCard({
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+    const [isSharing, setIsSharing] = useState(false);
+    const [shareSuccess, setShareSuccess] = useState(false);
     const hasFetchedRef = useRef(false);
+    const cardRef = useRef<HTMLDivElement>(null);
 
-    const fetchStock = async (tickerToFetch?: string) => {
-        const ticker = tickerToFetch || initialTicker;
-        try {
-            setError(null);
-            const response = await fetch(`/api/stock?ticker=${encodeURIComponent(ticker)}`);
-            
-            if (!response.ok) {
-                throw new Error('Failed to fetch stock data');
-            }
-
-            const data = await response.json();
-            setStockData(data);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load stock data');
-            console.error('Stock fetch error:', err);
-            throw err;
+    // Core fetch function - reused by initial load and refresh
+    const fetchStockData = useCallback(async (ticker: string): Promise<StockData> => {
+        const response = await fetch(`/api/stock?ticker=${encodeURIComponent(ticker)}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch stock data');
         }
-    };
+        return response.json();
+    }, []);
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
         setRefreshMessage('Fetching latest stock data...');
         setError(null);
         try {
-            const tickerToFetch = stockData?.ticker || initialTicker;
-            const response = await fetch(`/api/stock?ticker=${encodeURIComponent(tickerToFetch)}`);
-            
-            if (!response.ok) {
-                throw new Error('Failed to fetch stock data');
-            }
-
-            const data = await response.json();
+            const ticker = stockData?.ticker || initialTicker;
+            const data = await fetchStockData(ticker);
             setStockData(data);
             setRefreshMessage('Stock data updated successfully!');
-            setTimeout(() => {
-                setRefreshMessage(null);
-            }, 3000);
-        } catch (err) {
+            setTimeout(() => setRefreshMessage(null), 3000);
+        } catch {
             setRefreshMessage(null);
         } finally {
             setRefreshing(false);
         }
-    }, [stockData?.ticker, initialTicker]);
+    }, [stockData?.ticker, initialTicker, fetchStockData]);
+
+    // Share card as image - Gold Standard implementation
+    const handleShare = useCallback(async () => {
+        if (!cardRef.current || isSharing) return;
+        
+        setIsSharing(true);
+        try {
+            const node = cardRef.current;
+            
+            // 1. Wait for fonts to be ready to prevent "glitchy" text (FOUT fix)
+            await document.fonts.ready;
+            
+            // Detect if dark mode - use slate colors that match the card
+            const isDarkMode = document.documentElement.classList.contains('dark');
+            const bgColor = isDarkMode ? '#1e293b' : '#f8fafc'; // slate-800 / slate-50
+            
+            // Capture the card as PNG blob using html-to-image (Gold Standard config)
+            const blob = await htmlToImage.toBlob(node, {
+                pixelRatio: window.devicePixelRatio || 2, // Retina display support
+                backgroundColor: bgColor,                  // Prevent transparent artifacts
+                cacheBust: true,                          // CORS fix for external images
+                width: node.scrollWidth,                  // Layout stability
+                height: node.scrollHeight,
+                style: { transform: 'none', margin: '0' }, // Prevent layout shifts
+            });
+            
+            if (!blob) {
+                throw new Error('Failed to create image');
+            }
+
+            // Generate unique filename with date and time (YYYY-MM-DD_HH-MM-SS)
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+            const fileName = `${stockData?.ticker || 'stock'}-quote-${timestamp}.png`;
+
+            // Try Web Share API first (works on mobile and some desktop browsers)
+            if (navigator.share && navigator.canShare) {
+                const file = new File([blob], fileName, { type: 'image/png' });
+                const shareData = {
+                    title: `${stockData?.ticker} Stock Quote`,
+                    text: `${stockData?.name} (${stockData?.ticker}) - $${stockData?.price?.toFixed(2)}`,
+                    files: [file],
+                };
+
+                if (navigator.canShare(shareData)) {
+                    await navigator.share(shareData);
+                    setShareSuccess(true);
+                    setTimeout(() => setShareSuccess(false), 2000);
+                    return;
+                }
+            }
+
+            // Fallback: Download the image
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            setShareSuccess(true);
+            setTimeout(() => setShareSuccess(false), 2000);
+        } catch (err) {
+            // Silently ignore AbortError (user cancelled the share dialog)
+            if (err instanceof Error && err.name === 'AbortError') {
+                // User cancelled - not an error, just return silently
+                return;
+            }
+            // Log actual errors
+            console.error('Share error:', err);
+        } finally {
+            setIsSharing(false);
+        }
+    }, [stockData, isSharing]);
 
     // Expose refresh state to parent
     useEffect(() => {
@@ -114,22 +176,17 @@ export function StockQuoteCard({
         }
     }, [refreshing, refreshMessage, handleRefresh, onRefreshStateChange]);
 
+    // Initial data fetch on mount
     useEffect(() => {
         if (autoFetch && initialPrice === undefined && !hasFetchedRef.current) {
-            hasFetchedRef.current = true; // Mark as fetched to prevent duplicate calls
-            const loadStock = async () => {
-                try {
-                    setLoading(true);
-                    await fetchStock();
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            loadStock();
+            hasFetchedRef.current = true;
+            setLoading(true);
+            fetchStockData(initialTicker)
+                .then(setStockData)
+                .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load stock data'))
+                .finally(() => setLoading(false));
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [autoFetch, initialPrice, initialTicker, fetchStockData]);
 
     if (loading) {
         return (
@@ -200,78 +257,100 @@ export function StockQuoteCard({
     };
 
     return (
-        <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-4 space-y-4 flex flex-col">
-            <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                    <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-foreground mb-1">
-                        <span>Ticker</span>
-                    </div>
-                    <div className="text-3xl font-black tracking-tight text-foreground">{ticker?.toUpperCase() || '—'}</div>
-                    <div className="text-sm text-foreground truncate max-w-[220px]">{name || 'Unknown company'}</div>
-                </div>
-                <div className="text-right">
-                    <div className="text-xs uppercase tracking-wide text-foreground mb-1">Price</div>
-                    <div className="text-3xl font-bold text-foreground">
-                        {Number.isFinite(price) ? `$${price.toFixed(2)}` : '—'}
-                    </div>
-                </div>
-            </div>
+        <div className="relative">
+            {/* Share Button - positioned outside the captured area */}
+            <button
+                onClick={handleShare}
+                disabled={isSharing}
+                className="absolute -top-2 -right-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-all duration-200 disabled:opacity-50"
+                title={shareSuccess ? 'Shared!' : 'Share as image'}
+            >
+                {isSharing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                ) : shareSuccess ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                    <Share2 className="w-4 h-4" />
+                )}
+            </button>
 
-            <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                    <div className="text-xs uppercase tracking-wide text-foreground">Change</div>
-                    <div
-                        className={`text-lg font-semibold flex items-center gap-1 ${
-                            isChangePositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                        }`}
-                    >
-                        <span>{isChangePositive ? '▲' : '▼'}</span>
-                        {isValidNumber(changePercent) ? formatPercent(changePercent) : '—'}
+            {/* Card content - this gets captured as image */}
+            <div 
+                ref={cardRef}
+                className="w-full h-full rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 shadow-sm dark:shadow-md p-4 space-y-4 flex flex-col"
+            >
+                <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
+                            <span>Ticker</span>
+                        </div>
+                        <div className="text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100">{ticker?.toUpperCase() || '—'}</div>
+                        <div className="text-sm text-slate-700 dark:text-slate-300 truncate max-w-[220px]">{name || 'Unknown company'}</div>
                     </div>
-                    <div className="text-xs text-foreground mt-1">
-                        {formatAmount(normalizedChangeAmount)}
-                    </div>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                    <div className="text-xs uppercase tracking-wide text-foreground">YTD</div>
-                    <div
-                        className={`text-lg font-semibold flex items-center gap-1 ${
-                            isYtdPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                        }`}
-                    >
-                        <span>{isYtdPositive ? '▲' : '▼'}</span>
-                        {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'}
-                    </div>
-                    <div className="text-xs text-foreground mt-1">
-                        {formatAmount(normalizedYtdAmount)}
+                    <div className="text-right">
+                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">Price</div>
+                        <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                            {Number.isFinite(price) ? `$${price.toFixed(2)}` : '—'}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {(isValidNumber(ytdChangePercent) || hasSpyYtd) && (
-                <div className="rounded-xl border border-border/70 bg-transparent dark:bg-transparent p-3 shadow-sm dark:shadow-md">
-                    <div className="text-xs uppercase tracking-wide text-foreground">YTD vs SPY</div>
-                    <div
-                        className={`text-lg font-semibold flex items-center gap-1 ${
-                            ytdVsSpy !== undefined
-                                ? ytdVsSpy >= 0
-                                    ? 'text-green-600 dark:text-green-400'
-                                    : 'text-red-600 dark:text-red-400'
-                                : 'text-foreground'
-                        }`}
-                    >
-                        {ytdVsSpy !== undefined && <span>{ytdVsSpy >= 0 ? '▲' : '▼'}</span>}
-                        {ytdVsSpy !== undefined ? formatPercent(ytdVsSpy) : '—'}
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300">Change</div>
+                        <div
+                            className={`text-lg font-semibold flex items-center gap-1 ${
+                                isChangePositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                            }`}
+                        >
+                            <span>{isChangePositive ? '▲' : '▼'}</span>
+                            {isValidNumber(changePercent) ? formatPercent(changePercent) : '—'}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                            {formatAmount(normalizedChangeAmount)}
+                        </div>
                     </div>
-                    <div className="text-xs text-foreground mt-1">
-                        Stock YTD: {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'} • SPY YTD:{' '}
-                        {hasSpyYtd ? formatPercent(normalizedSpyYtd) : 'Unavailable'}
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300">YTD</div>
+                        <div
+                            className={`text-lg font-semibold flex items-center gap-1 ${
+                                isYtdPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                            }`}
+                        >
+                            <span>{isYtdPositive ? '▲' : '▼'}</span>
+                            {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                            {formatAmount(normalizedYtdAmount)}
+                        </div>
                     </div>
                 </div>
-            )}
 
-            <div className="text-[11px] uppercase tracking-wider text-foreground/80 text-right">
-                Sourced from Yahoo Finance
+                {(isValidNumber(ytdChangePercent) || hasSpyYtd) && (
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
+                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300">YTD vs SPY</div>
+                        <div
+                            className={`text-lg font-semibold flex items-center gap-1 ${
+                                ytdVsSpy !== undefined
+                                    ? ytdVsSpy >= 0
+                                        ? 'text-green-600 dark:text-green-400'
+                                        : 'text-red-600 dark:text-red-400'
+                                    : 'text-slate-900 dark:text-slate-100'
+                            }`}
+                        >
+                            {ytdVsSpy !== undefined && <span>{ytdVsSpy >= 0 ? '▲' : '▼'}</span>}
+                            {ytdVsSpy !== undefined ? formatPercent(ytdVsSpy) : '—'}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                            Stock YTD: {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'} • SPY YTD:{' '}
+                            {hasSpyYtd ? formatPercent(normalizedSpyYtd) : 'Unavailable'}
+                        </div>
+                    </div>
+                )}
+
+                <div className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">
+                    Sourced from Yahoo Finance
+                </div>
             </div>
         </div>
     );

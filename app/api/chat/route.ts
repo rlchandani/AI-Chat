@@ -160,20 +160,14 @@ const yahooFinanceTools = {
             symbol: z.string().min(1).describe('Stock ticker symbol. Examples: AAPL, GOOGL, MSFT, TSLA, AMZN, NVDA'),
         }),
         execute: async (args: any) => {
-            console.log(`[Tool] get_stock_quote received args:`, JSON.stringify(args));
             const ticker = args.symbol || args.ticker || args.stock || args.name;
             if (!ticker || ticker.trim() === '') {
-                console.error(`[Tool] get_stock_quote error: No ticker provided. Args:`, args);
                 return { error: 'Missing stock symbol. Please ask about a specific stock like "What is Apple stock price?" or "TSLA price"' };
             }
-            console.log(`[Tool] get_stock_quote called with ticker: ${ticker}`);
             try {
-                // Always fetch full data including YTD and SPY comparison
-                const quote = await getStockQuoteWithYTD(ticker);
-                console.log(`[Tool] get_stock_quote result:`, quote);
-                return quote;
+                return await getStockQuoteWithYTD(ticker);
             } catch (error) {
-                console.error(`[Tool] get_stock_quote error:`, error);
+                console.error(`[Tool] get_stock_quote error for ${ticker}:`, error);
                 return { error: `Failed to fetch quote for ${ticker}: ${error instanceof Error ? error.message : 'Unknown error'}` };
             }
         },
@@ -189,11 +183,8 @@ const yahooFinanceTools = {
             if (!tickers || !Array.isArray(tickers) || tickers.length === 0) {
                 return { error: 'Missing stock symbols. Please specify which stocks to compare.' };
             }
-            console.log(`[Tool] get_multiple_quotes called with tickers:`, tickers);
             try {
-                const quotes = await getMultipleStockQuotes(tickers);
-                console.log(`[Tool] get_multiple_quotes result: ${quotes.length} quotes`);
-                return quotes;
+                return await getMultipleStockQuotes(tickers);
             } catch (error) {
                 console.error(`[Tool] get_multiple_quotes error:`, error);
                 return { error: `Failed to fetch quotes: ${error instanceof Error ? error.message : 'Unknown error'}` };
@@ -211,11 +202,8 @@ const yahooFinanceTools = {
             if (!query || query.trim() === '') {
                 return { error: 'Missing search query. Please specify a company name.' };
             }
-            console.log(`[Tool] search_stocks called with query: ${query}`);
             try {
-                const results = await searchStocks(query);
-                console.log(`[Tool] search_stocks result: ${results.length} matches`);
-                return results;
+                return await searchStocks(query);
             } catch (error) {
                 console.error(`[Tool] search_stocks error:`, error);
                 return { error: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
@@ -381,19 +369,15 @@ export async function POST(req: Request) {
                                 controller.enqueue(encoder.encode(textContent));
                             }
                         }
-                        // Capture tool results
+                        // Capture tool results for fallback formatting
                         else if (part.type === 'tool-result') {
                             const toolPart = part as any;
                             lastToolName = toolPart.toolName;
-                            // AI SDK might use 'result' or 'output' for the tool result
                             lastToolResult = toolPart.result || toolPart.output;
-                            console.log(`[Stream] Tool result for: ${toolPart.toolName}`, JSON.stringify(lastToolResult));
                         }
+                        // Handle stream finish - format tool results if model didn't generate text
                         else if (part.type === 'finish') {
-                            console.log(`[Stream] Finish event. hasGeneratedText: ${hasGeneratedText}, lastToolResult: ${!!lastToolResult}`);
-                            // If no text was generated but we have tool results, format and stream them
                             if (!hasGeneratedText && lastToolResult) {
-                                console.log(`[Stream] Model did not generate text, formatting tool result as response`);
                                 const formattedResponse = formatToolResultAsText(lastToolName, lastToolResult);
                                 controller.enqueue(encoder.encode(formattedResponse));
                             }
