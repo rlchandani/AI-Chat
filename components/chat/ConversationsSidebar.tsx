@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, Trash2, Edit2, X, Check, AlertTriangle } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Edit2, X, Check, CheckSquare, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     getAllConversations,
@@ -13,7 +13,6 @@ import {
     loadChatHistory,
     getAllConversationIds,
     findEmptyConversation,
-    clearAllChatHistory,
 } from '@/utils/chatStorage';
 import { getSetting } from '@/utils/settingsStorage';
 
@@ -37,19 +36,19 @@ export function ConversationsSidebar({
     const [conversations, setConversations] = useState<Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }>>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editTitle, setEditTitle] = useState('');
-    const [hoveredId, setHoveredId] = useState<string | null>(null);
     const [mounted, setMounted] = useState(false);
     const [unsavedConversationIds, setUnsavedConversationIds] = useState<Set<string>>(new Set());
     const [autoHideSidebar, setAutoHideSidebar] = useState(true);
-    const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
-    const [savedConversationCount, setSavedConversationCount] = useState(0);
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; title: string } | null>(null);
+    const [isSelectMode, setIsSelectMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
 
     // Track if we're on desktop and load settings
     useEffect(() => {
         setMounted(true);
         if (typeof window !== 'undefined') {
             setAutoHideSidebar(getSetting('autoHideSidebar'));
-            setSavedConversationCount(getAllConversationIds().length);
         }
     }, []);
 
@@ -105,7 +104,6 @@ export function ConversationsSidebar({
         const handleStorageChange = () => {
             // Remove saved conversations from unsaved set
             const savedIds = getAllConversationIds();
-            setSavedConversationCount(savedIds.length);
             setUnsavedConversationIds(prev => {
                 const next = new Set(prev);
                 savedIds.forEach(id => next.delete(id));
@@ -179,43 +177,50 @@ export function ConversationsSidebar({
         if (onClose) onClose();
     };
 
-    const handleDeleteConversation = (e: React.MouseEvent, conversationId: string) => {
+    const handleDeleteConversation = (e: React.MouseEvent, conversationId: string, title: string) => {
         e.stopPropagation();
-        if (confirm('Are you sure you want to delete this conversation?')) {
-            const wasCurrentConversation = conversationId === currentConversationId;
+        setDeleteConfirmation({ id: conversationId, title });
+    };
 
-            // Check if it's a saved conversation
-            const savedIds = getAllConversationIds();
-            if (savedIds.includes(conversationId)) {
-                deleteConversation(conversationId);
+    const confirmDeleteConversation = () => {
+        if (!deleteConfirmation) return;
+        
+        const conversationId = deleteConfirmation.id;
+        const wasCurrentConversation = conversationId === currentConversationId;
+
+        // Check if it's a saved conversation
+        const savedIds = getAllConversationIds();
+        if (savedIds.includes(conversationId)) {
+            deleteConversation(conversationId);
+        } else {
+            // It's unsaved, remove from unsaved set
+            setUnsavedConversationIds(prev => {
+                const next = new Set(prev);
+                next.delete(conversationId);
+                return next;
+            });
+        }
+
+        // Reload conversations
+        loadConversations();
+
+        // If we deleted the current conversation, switch to another
+        if (wasCurrentConversation) {
+            const updatedConversations = getAllConversations();
+            if (updatedConversations.length > 0) {
+                // Switch to the first remaining conversation (most recent)
+                const newConversationId = updatedConversations[0].id;
+                setCurrentConversationId(newConversationId);
+                const messages = loadChatHistory(newConversationId);
+                onConversationSelect(messages);
+                onConversationChange(newConversationId);
             } else {
-                // It's unsaved, remove from unsaved set
-                setUnsavedConversationIds(prev => {
-                    const next = new Set(prev);
-                    next.delete(conversationId);
-                    return next;
-                });
-            }
-
-            // Reload conversations
-            loadConversations();
-
-            // If we deleted the current conversation, switch to another
-            if (wasCurrentConversation) {
-                const updatedConversations = getAllConversations();
-                if (updatedConversations.length > 0) {
-                    // Switch to the first remaining conversation (most recent)
-                    const newConversationId = updatedConversations[0].id;
-                    setCurrentConversationId(newConversationId);
-                    const messages = loadChatHistory(newConversationId);
-                    onConversationSelect(messages);
-                    onConversationChange(newConversationId);
-                } else {
-                    // No conversations left, create a new one
-                    handleNewConversation();
-                }
+                // No conversations left, create a new one
+                handleNewConversation();
             }
         }
+        
+        setDeleteConfirmation(null);
     };
 
     const handleStartEdit = (e: React.MouseEvent, conversationId: string, currentTitle: string) => {
@@ -238,6 +243,74 @@ export function ConversationsSidebar({
         e.stopPropagation();
         setEditingId(null);
         setEditTitle('');
+    };
+
+    // Multi-select functions
+    const toggleSelectMode = () => {
+        setIsSelectMode(!isSelectMode);
+        setSelectedIds(new Set());
+    };
+
+    const toggleSelectConversation = (e: React.MouseEvent, conversationId: string) => {
+        e.stopPropagation();
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(conversationId)) {
+                next.delete(conversationId);
+            } else {
+                next.add(conversationId);
+            }
+            return next;
+        });
+    };
+
+    const selectAllConversations = () => {
+        setSelectedIds(new Set(conversations.map(c => c.id)));
+    };
+
+    const deselectAllConversations = () => {
+        setSelectedIds(new Set());
+    };
+
+    const confirmDeleteSelected = () => {
+        const savedIds = getAllConversationIds();
+        let deletedCurrentConversation = false;
+
+        selectedIds.forEach(id => {
+            if (id === currentConversationId) {
+                deletedCurrentConversation = true;
+            }
+            if (savedIds.includes(id)) {
+                deleteConversation(id);
+            } else {
+                setUnsavedConversationIds(prev => {
+                    const next = new Set(prev);
+                    next.delete(id);
+                    return next;
+                });
+            }
+        });
+
+        // Reload conversations
+        loadConversations();
+
+        // If we deleted the current conversation, switch to another
+        if (deletedCurrentConversation) {
+            const updatedConversations = getAllConversations();
+            if (updatedConversations.length > 0) {
+                const newConversationId = updatedConversations[0].id;
+                setCurrentConversationId(newConversationId);
+                const messages = loadChatHistory(newConversationId);
+                onConversationSelect(messages);
+                onConversationChange(newConversationId);
+            } else {
+                handleNewConversation();
+            }
+        }
+
+        setSelectedIds(new Set());
+        setIsSelectMode(false);
+        setShowDeleteSelectedModal(false);
     };
 
     const formatDate = (timestamp: number) => {
@@ -307,24 +380,61 @@ export function ConversationsSidebar({
             >
                 {/* Header */}
                 <div className="h-14 flex items-center justify-between px-4 border-b border-border">
-                    <h2 className="text-lg font-semibold">Conversations</h2>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleNewConversation}
-                            disabled={isGenerating}
-                            className={`p-2 rounded-lg transition-colors ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent'}`}
-                            title={isGenerating ? "Cannot create new conversation while generating" : "New conversation"}
-                        >
-                            <Plus size={20} />
-                        </button>
-                        {onClose && mounted && autoHideSidebar && (
-                            <button
-                                onClick={onClose}
-                                className="p-2 rounded-lg hover:bg-accent transition-colors"
-                                aria-label="Close sidebar"
-                            >
-                                <X size={20} />
-                            </button>
+                    <h2 className="text-lg font-semibold">
+                        {isSelectMode ? `${selectedIds.size} selected` : 'Conversations'}
+                    </h2>
+                    <div className="flex items-center gap-1">
+                        {isSelectMode ? (
+                            <>
+                                <button
+                                    onClick={selectedIds.size === conversations.length ? deselectAllConversations : selectAllConversations}
+                                    className="p-2 rounded-lg hover:bg-accent transition-colors text-sm"
+                                    title={selectedIds.size === conversations.length ? "Deselect all" : "Select all"}
+                                >
+                                    {selectedIds.size === conversations.length ? (
+                                        <CheckSquare size={18} className="text-primary" />
+                                    ) : (
+                                        <Square size={18} />
+                                    )}
+                                </button>
+                                <button
+                                    onClick={toggleSelectMode}
+                                    className="p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground"
+                                    title="Cancel selection"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                {conversations.length > 0 && (
+                                    <button
+                                        onClick={toggleSelectMode}
+                                        disabled={isGenerating}
+                                        className={`p-2 rounded-lg transition-colors ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent'}`}
+                                        title="Select multiple"
+                                    >
+                                        <CheckSquare size={18} />
+                                    </button>
+                                )}
+                                <button
+                                    onClick={handleNewConversation}
+                                    disabled={isGenerating}
+                                    className={`p-2 rounded-lg transition-colors ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent'}`}
+                                    title={isGenerating ? "Cannot create new conversation while generating" : "New conversation"}
+                                >
+                                    <Plus size={20} />
+                                </button>
+                                {onClose && mounted && autoHideSidebar && (
+                                    <button
+                                        onClick={onClose}
+                                        className="p-2 rounded-lg hover:bg-accent transition-colors"
+                                        aria-label="Close sidebar"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </>
                         )}
                     </div>
                 </div>
@@ -347,18 +457,25 @@ export function ConversationsSidebar({
                             {conversations.map((conv) => {
                                 const isActive = conv.id === currentConversationId;
                                 const isEditing = editingId === conv.id;
+                                const isSelected = selectedIds.has(conv.id);
 
                                 return (
                                     <div
                                         key={conv.id}
-                                        onMouseEnter={() => setHoveredId(conv.id)}
-                                        onMouseLeave={() => setHoveredId(null)}
-                                        onClick={() => !isEditing && handleSelectConversation(conv.id)}
+                                        onClick={(e) => {
+                                            if (isSelectMode) {
+                                                toggleSelectConversation(e, conv.id);
+                                            } else if (!isEditing) {
+                                                handleSelectConversation(conv.id);
+                                            }
+                                        }}
                                         className={`
                                                     relative group p-3 rounded-lg mb-1 cursor-pointer transition-colors
-                                                    ${isActive
+                                                    ${isSelectMode && isSelected
                                                 ? 'bg-primary/10 border border-primary/20'
-                                                : 'hover:bg-accent/50'
+                                                : isActive && !isSelectMode
+                                                    ? 'bg-primary/10 border border-primary/20'
+                                                    : 'hover:bg-accent/50'
                                             }
                                                 `}
                                     >
@@ -394,18 +511,30 @@ export function ConversationsSidebar({
                                             </div>
                                         ) : (
                                             <>
-                                                <div className="flex items-start justify-between gap-2">
+                                                <div className="flex items-start gap-3">
+                                                    {/* Checkbox for select mode */}
+                                                    {isSelectMode && (
+                                                        <div className="shrink-0 mt-0.5">
+                                                            {isSelected ? (
+                                                                <CheckSquare size={18} className="text-primary" />
+                                                            ) : (
+                                                                <Square size={18} className="text-muted-foreground" />
+                                                            )}
+                                                        </div>
+                                                    )}
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            <MessageSquare size={16} className={isActive ? 'text-primary' : 'text-muted-foreground shrink-0'} />
+                                                            {!isSelectMode && (
+                                                                <MessageSquare size={16} className={isActive ? 'text-primary' : 'text-muted-foreground shrink-0'} />
+                                                            )}
                                                             <h3 className={`
                                                                         text-sm font-medium truncate
-                                                                        ${isActive ? 'text-primary' : 'text-foreground'}
+                                                                        ${isActive && !isSelectMode ? 'text-primary' : 'text-foreground'}
                                                                     `}>
                                                                 {conv.title}
                                                             </h3>
                                                         </div>
-                                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                        <div className={`flex items-center gap-2 text-xs text-muted-foreground ${isSelectMode ? 'ml-0' : ''}`}>
                                                             <span>{formatDate(conv.lastUpdated)}</span>
                                                             {conv.messageCount > 0 && (
                                                                 <>
@@ -417,9 +546,12 @@ export function ConversationsSidebar({
                                                     </div>
                                                 </div>
 
-                                                {/* Action buttons on hover */}
-                                                {hoveredId === conv.id && (
-                                                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {/* Action buttons (hidden in select mode) */}
+                                                {!isSelectMode && (
+                                                    <div className={`
+                                                        absolute top-2 right-2 flex items-center gap-1 transition-opacity
+                                                        ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+                                                    `}>
                                                         <button
                                                             onClick={(e) => handleStartEdit(e, conv.id, conv.title)}
                                                             className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
@@ -427,13 +559,16 @@ export function ConversationsSidebar({
                                                         >
                                                             <Edit2 size={14} />
                                                         </button>
-                                                        <button
-                                                            onClick={(e) => handleDeleteConversation(e, conv.id)}
-                                                            className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
+                                                        {/* Only show delete for conversations with messages */}
+                                                        {conv.messageCount > 0 && (
+                                                            <button
+                                                                onClick={(e) => handleDeleteConversation(e, conv.id, conv.title)}
+                                                                className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 )}
                                             </>
@@ -445,77 +580,158 @@ export function ConversationsSidebar({
                     )}
                 </div>
 
-                {/* Delete All History Button - only show if there are saved conversations */}
-                {mounted && savedConversationCount > 0 && (
+                {/* Footer - Delete Selected */}
+                {mounted && isSelectMode && selectedIds.size > 0 && (
                     <div className="p-3 border-t border-border">
                         <button
-                            onClick={() => setShowDeleteAllModal(true)}
-                            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                            onClick={() => setShowDeleteSelectedModal(true)}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-sm bg-red-500 text-white hover:bg-red-600 rounded-lg transition-colors font-medium"
                         >
                             <Trash2 size={16} />
-                            Delete All History
+                            Delete {selectedIds.size} Selected
                         </button>
                     </div>
                 )}
             </motion.div>
 
-            {/* Delete All Confirmation Modal */}
+            {/* Delete Single Conversation Confirmation Modal */}
             <AnimatePresence>
-                {showDeleteAllModal && (
+                {deleteConfirmation && (
                     <>
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            onClick={() => setShowDeleteAllModal(false)}
-                            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]"
+                            onClick={() => setDeleteConfirmation(null)}
+                            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999]"
                         />
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-card border border-border rounded-xl shadow-2xl z-[101] p-6"
-                        >
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="p-3 rounded-full bg-red-500/10">
-                                    <AlertTriangle size={24} className="text-red-500" />
+                        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Header */}
+                                <div className="flex items-center justify-between p-6 border-b border-border">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                                            <Trash2 size={20} className="text-red-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-semibold">Delete Conversation</h2>
+                                            <p className="text-sm text-muted-foreground">This cannot be undone</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setDeleteConfirmation(null)}
+                                        className="p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                                        aria-label="Close"
+                                    >
+                                        <X size={20} />
+                                    </button>
                                 </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold">Delete All Chat History</h3>
-                                    <p className="text-sm text-muted-foreground">This action cannot be undone</p>
+
+                                {/* Content */}
+                                <div className="p-6 space-y-4">
+                                    <p className="text-sm text-muted-foreground">
+                                        Are you sure you want to delete <span className="font-medium text-foreground">"{deleteConfirmation.title}"</span>? This will permanently remove this conversation and all its messages.
+                                    </p>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={() => setDeleteConfirmation(null)}
+                                            className="flex-1 px-4 py-2.5 rounded-xl border border-border hover:bg-accent transition-colors font-medium"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={confirmDeleteConversation}
+                                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
+                                        >
+                                            <Trash2 size={18} />
+                                            Delete
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-6">
-                                Are you sure you want to delete all <strong>{savedConversationCount}</strong> conversation{savedConversationCount !== 1 ? 's' : ''}? 
-                                This will permanently remove all your chat history.
-                            </p>
-                            <div className="flex gap-3 justify-end">
-                                <button
-                                    onClick={() => setShowDeleteAllModal(false)}
-                                    className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-accent transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        clearAllChatHistory();
-                                        setShowDeleteAllModal(false);
-                                        setConversations([]);
-                                        setUnsavedConversationIds(new Set());
-                                        // Create a new conversation after clearing
-                                        const newId = createNewConversation();
-                                        onConversationChange(newId);
-                                        onConversationSelect([]);
-                                    }}
-                                    className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
-                                >
-                                    Delete All
-                                </button>
-                            </div>
-                        </motion.div>
+                            </motion.div>
+                        </div>
                     </>
                 )}
             </AnimatePresence>
+
+            {/* Delete Selected Confirmation Modal */}
+            <AnimatePresence>
+                {showDeleteSelectedModal && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setShowDeleteSelectedModal(false)}
+                            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999]"
+                        />
+                        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                                className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Header */}
+                                <div className="flex items-center justify-between p-6 border-b border-border">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                                            <Trash2 size={20} className="text-red-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-semibold">Delete Selected</h2>
+                                            <p className="text-sm text-muted-foreground">This cannot be undone</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowDeleteSelectedModal(false)}
+                                        className="p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                                        aria-label="Close"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+
+                                {/* Content */}
+                                <div className="p-6 space-y-4">
+                                    <p className="text-sm text-muted-foreground">
+                                        Are you sure you want to delete <span className="font-medium text-foreground">{selectedIds.size}</span> conversation{selectedIds.size !== 1 ? 's' : ''}? This will permanently remove all selected conversations and their messages.
+                                    </p>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-3 pt-2">
+                                        <button
+                                            onClick={() => setShowDeleteSelectedModal(false)}
+                                            className="flex-1 px-4 py-2.5 rounded-xl border border-border hover:bg-accent transition-colors font-medium"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={confirmDeleteSelected}
+                                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
+                                        >
+                                            <Trash2 size={18} />
+                                            Delete {selectedIds.size}
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    </>
+                )}
+            </AnimatePresence>
+
         </>
     );
 }

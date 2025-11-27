@@ -11,7 +11,7 @@ import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ShareConversation } from '@/components/chat/ShareConversation';
 import { Settings } from '@/components/chat/Settings';
 import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel } from '@/utils/modelStorage';
-import { getCurrentConversationId, createNewConversation, loadChatHistory, loadUsageStats, getConversationMetadata, getUnsavedConversationMetadata, setCurrentConversationId as saveCurrentConversationId, findEmptyConversation } from '@/utils/chatStorage';
+import { getCurrentConversationId, createNewConversation, loadChatHistory, loadUsageStats, getConversationMetadata, getUnsavedConversationMetadata, setCurrentConversationId as saveCurrentConversationId, findEmptyConversation, saveConversationModel, loadConversationModel } from '@/utils/chatStorage';
 import { getSetting } from '@/utils/settingsStorage';
 import { Menu, Settings as SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -42,9 +42,6 @@ export default function Home() {
   useEffect(() => {
     setMounted(true);
     if (typeof window !== 'undefined') {
-      const savedModel = getSelectedModel();
-      setSelectedModel(savedModel);
-
       // Check if there's a conversation ID in the URL (shared link)
       const urlParams = new URLSearchParams(window.location.search);
       const urlConversationId = urlParams.get('conversation');
@@ -99,6 +96,13 @@ export default function Home() {
       }
       setCurrentConversationId(convId);
 
+      // Load saved model for this conversation, or fall back to global saved model
+      const conversationModel = loadConversationModel(convId);
+      const globalModel = getSelectedModel();
+      const modelToUse = conversationModel || globalModel;
+      setSelectedModel(modelToUse);
+      saveSelectedModel(modelToUse);
+
       // Load cumulative usage stats
       const savedUsage = loadUsageStats(convId);
       if (savedUsage) {
@@ -131,21 +135,25 @@ export default function Home() {
       return;
     }
 
+    // Save model for this conversation when first message is sent
+    if (currentConversationId) {
+      saveConversationModel(currentConversationId, selectedModel);
+    }
+
     append({ role: 'user', content: input });
     setInput('');
   };
 
   const handleNewConversation = () => {
-    // Check if there's already an unsaved empty conversation
-    const { getAllConversationIds, loadChatHistory } = require('@/utils/chatStorage');
-    const savedIds = getAllConversationIds();
-
     // For now, just create a new one - the sidebar will handle checking for existing unsaved
     const newId = createNewConversation();
     setCurrentConversationId(newId);
     setMessages([]);
     setCumulativeUsage(null);
     setConversationTitle('New Conversation');
+
+    // Save the current model for the new conversation
+    saveConversationModel(newId, selectedModel);
 
     // Update URL with new conversation ID
     if (typeof window !== 'undefined') {
@@ -171,23 +179,24 @@ export default function Home() {
       // No messages, just change the model directly
       setSelectedModel(newModelId); // Update state
       saveSelectedModel(newModelId); // Save to localStorage
+      // Save model for this conversation
+      if (currentConversationId) {
+        saveConversationModel(currentConversationId, newModelId);
+      }
     }
   };
 
-  const handleModelChangeConfirm = (action: 'new' | 'continue') => {
+  const handleModelChangeConfirm = () => {
     if (!modelChangeDialog.newModelId) return;
 
     const newModelId = modelChangeDialog.newModelId;
 
     // Update model in state and localStorage
-    setSelectedModel(newModelId); // Update state
-    saveSelectedModel(newModelId); // Save to localStorage
+    setSelectedModel(newModelId);
+    saveSelectedModel(newModelId);
 
-    if (action === 'new') {
-      // Start new conversation with new model
-      handleNewConversation();
-    }
-    // If 'continue', just keep the current conversation (model already changed)
+    // Start new conversation with new model
+    handleNewConversation();
 
     // Close dialog
     setModelChangeDialog({ isOpen: false, newModelId: null });
@@ -212,6 +221,13 @@ export default function Home() {
       const url = new URL(window.location.href);
       url.searchParams.set('conversation', conversationId);
       router.replace(url.pathname + url.search, { scroll: false });
+    }
+
+    // Load saved model for this conversation
+    const savedModel = loadConversationModel(conversationId);
+    if (savedModel) {
+      setSelectedModel(savedModel);
+      saveSelectedModel(savedModel);
     }
 
     // Load usage stats for the new conversation
@@ -490,8 +506,7 @@ export default function Home() {
         isOpen={modelChangeDialog.isOpen}
         currentModelId={selectedModel}
         newModelId={modelChangeDialog.newModelId || ''}
-        onStartNewConversation={() => handleModelChangeConfirm('new')}
-        onContinueInCurrent={() => handleModelChangeConfirm('continue')}
+        onStartNewConversation={handleModelChangeConfirm}
         onCancel={handleModelChangeCancel}
       />
     </main>

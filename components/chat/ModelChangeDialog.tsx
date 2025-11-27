@@ -9,7 +9,6 @@ interface ModelChangeDialogProps {
     currentModelId: string;
     newModelId: string;
     onStartNewConversation: () => void;
-    onContinueInCurrent: () => void;
     onCancel: () => void;
 }
 
@@ -18,7 +17,6 @@ export function ModelChangeDialog({
     currentModelId,
     newModelId,
     onStartNewConversation,
-    onContinueInCurrent,
     onCancel,
 }: ModelChangeDialogProps) {
     const currentModel = getModelInfo(currentModelId);
@@ -57,7 +55,7 @@ export function ModelChangeDialog({
                                     </div>
                                     <div>
                                         <h2 className="text-lg font-semibold">Change Model</h2>
-                                        <p className="text-sm text-muted-foreground">Choose how to proceed</p>
+                                        <p className="text-sm text-muted-foreground">Start a new conversation</p>
                                     </div>
                                 </div>
                                 <button
@@ -71,45 +69,24 @@ export function ModelChangeDialog({
 
                             {/* Content */}
                             <div className="p-6 space-y-4">
-                                <div className="space-y-2">
-                                    <p className="text-sm text-muted-foreground">
-                                        You're switching from <span className="font-medium text-foreground">{currentModel.name}</span> to <span className="font-medium text-foreground">{newModel.name}</span>.
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                        How would you like to proceed?
-                                    </p>
-                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                    Switching from <span className="font-medium text-foreground">{currentModel.name}</span> to <span className="font-medium text-foreground">{newModel.name}</span> will start a new conversation.
+                                </p>
 
                                 {/* Action Buttons */}
-                                <div className="space-y-3 pt-2">
+                                <div className="flex gap-3 pt-2">
+                                    <button
+                                        onClick={onCancel}
+                                        className="flex-1 px-4 py-2.5 rounded-xl border border-border hover:bg-accent transition-colors font-medium"
+                                    >
+                                        Cancel
+                                    </button>
                                     <button
                                         onClick={onStartNewConversation}
-                                        className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-primary bg-primary/10 hover:bg-primary/20 transition-colors text-left group"
+                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
                                     >
-                                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center shrink-0 group-hover:bg-primary/30 transition-colors">
-                                            <MessageSquare size={20} className="text-primary" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="font-semibold text-foreground">Start New Conversation</div>
-                                            <div className="text-xs text-muted-foreground mt-0.5">
-                                                Create a fresh conversation with {newModel.name}
-                                            </div>
-                                        </div>
-                                    </button>
-
-                                    <button
-                                        onClick={onContinueInCurrent}
-                                        className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-accent/50 transition-colors text-left group"
-                                    >
-                                        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 group-hover:bg-accent transition-colors">
-                                            <Sparkles size={20} className="text-muted-foreground group-hover:text-primary transition-colors" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="font-semibold text-foreground">Continue in Current Conversation</div>
-                                            <div className="text-xs text-muted-foreground mt-0.5">
-                                                Keep your current conversation and switch to {newModel.name}
-                                            </div>
-                                        </div>
+                                        <MessageSquare size={18} />
+                                        Start New Chat
                                     </button>
                                 </div>
                             </div>

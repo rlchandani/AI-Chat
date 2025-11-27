@@ -21,6 +21,7 @@ export interface ChatHistory {
     title?: string; // Custom title for the conversation
     createdAt?: number; // When the conversation was created
     usageStats?: UsageStats; // Cumulative usage statistics
+    model?: string; // Model used for this conversation
 }
 
 export interface BattleHistory {
@@ -122,6 +123,7 @@ export function saveChatHistory(messages: Message[]): void {
             title: isManuallySet ? existingTitle : (autoTitle || existingTitle || 'New Conversation'),
             createdAt: existingHistory?.createdAt || Date.now(), // Preserve or set creation time
             usageStats: existingHistory?.usageStats, // Preserve existing usage stats
+            model: existingHistory?.model, // Preserve model selection
         };
         
         // Save current conversation
@@ -555,6 +557,64 @@ export function loadUsageStats(conversationId?: string): UsageStats | null {
         return history.usageStats || null;
     } catch (error) {
         console.error('Failed to load usage stats:', error);
+        return null;
+    }
+}
+
+/**
+ * Save model for a conversation
+ */
+export function saveConversationModel(conversationId: string, modelId: string): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+        const stored = localStorage.getItem(`${STORAGE_KEY}-${conversationId}`);
+        let history: ChatHistory;
+        
+        if (stored) {
+            history = JSON.parse(stored);
+        } else {
+            // If conversation doesn't exist, create it
+            history = {
+                messages: [],
+                lastUpdated: Date.now(),
+                conversationId,
+                title: 'New Conversation',
+                createdAt: Date.now(),
+            };
+            
+            // Add to conversations list
+            const conversationsList = getAllConversationIds();
+            if (!conversationsList.includes(conversationId)) {
+                conversationsList.push(conversationId);
+                localStorage.setItem(`${STORAGE_KEY}-list`, JSON.stringify(conversationsList));
+            }
+        }
+        
+        history.model = modelId;
+        
+        localStorage.setItem(`${STORAGE_KEY}-${conversationId}`, JSON.stringify(history));
+    } catch (error) {
+        console.error('Failed to save conversation model:', error);
+    }
+}
+
+/**
+ * Load model for a conversation
+ */
+export function loadConversationModel(conversationId?: string): string | null {
+    if (typeof window === 'undefined') return null;
+    
+    try {
+        const id = conversationId || getCurrentConversationId();
+        const stored = localStorage.getItem(`${STORAGE_KEY}-${id}`);
+        
+        if (!stored) return null;
+        
+        const history: ChatHistory = JSON.parse(stored);
+        return history.model || null;
+    } catch (error) {
+        console.error('Failed to load conversation model:', error);
         return null;
     }
 }
