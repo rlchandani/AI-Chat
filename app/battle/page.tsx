@@ -570,7 +570,6 @@ export default function BattlePage() {
         currentConversationId,
         leftChat.usageInfo,
         leftModel,
-        cost,
         'left'
       );
     }
@@ -593,7 +592,6 @@ export default function BattlePage() {
         currentConversationId,
         rightChat.usageInfo,
         rightModel,
-        cost,
         'right'
       );
     }

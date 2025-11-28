@@ -26,7 +26,7 @@ export interface ManualChatStorage {
     loadHistory?: () => Message[];
     saveHistory?: (messages: Message[]) => void;
     loadUsageStats?: () => UsageInfo | null;
-    saveUsageStats?: (conversationId: string, usage: UsageInfo, modelId: string, requestCost: number) => void;
+    saveUsageStats?: (conversationId: string, usage: UsageInfo, modelId: string) => void;
     getCurrentConversationId?: () => string;
 }
 
@@ -54,7 +54,7 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
         loadHistory: () => loadChatHistory(),
         saveHistory: (msgs) => saveChatHistory(msgs),
         loadUsageStats: () => loadUsageStats(),
-        saveUsageStats: (conversationId, usage, modelId, requestCost) => saveUsageStats(conversationId, usage, modelId, requestCost),
+        saveUsageStats: (conversationId, usage, modelId) => saveUsageStats(conversationId, usage, modelId),
         getCurrentConversationId: () => getCurrentConversationId(),
     };
     const storageHelpers = {
@@ -232,13 +232,7 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
                             if (conversationId && storageHelpers.saveUsageStats) {
                                 const currentModel = modelRef.current || 'gemini-2.5-flash';
 
-                                const requestCost = calculateCost(
-                                    newUsage.promptTokens,
-                                    newUsage.completionTokens,
-                                    currentModel
-                                );
-
-                                storageHelpers.saveUsageStats(conversationId, newUsage, currentModel, requestCost);
+                                storageHelpers.saveUsageStats(conversationId, newUsage, currentModel);
 
                                 window.dispatchEvent(new Event('usageUpdated'));
                             }

@@ -102,7 +102,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
       hasFetchedRef.current = true;
       fetchGitHubData(initialUsername);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [initialUsername]);
 
   const handleRefresh = useCallback(async () => {

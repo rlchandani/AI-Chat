@@ -78,7 +78,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       hasFetchedRef.current = true; // Mark as fetched to prevent duplicate calls
       fetchStocks(initialTickers);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [initialTickers]);
 
   const handleSave = () => {

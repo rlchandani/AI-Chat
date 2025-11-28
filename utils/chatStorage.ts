@@ -93,7 +93,7 @@ export function saveChatHistory(messages: Message[]): void {
         if (existing) {
             try {
                 existingHistory = JSON.parse(existing);
-            } catch (_e) {
+            } catch {
                 // Ignore parse errors
             }
         }
@@ -250,7 +250,7 @@ export function findEmptyConversation(): string | null {
                     if (storedTitle === 'New Conversation') {
                         return conv.id;
                     }
-                } catch (e) {
+                } catch {
                     // Skip if can't parse
                 }
             }
@@ -481,8 +481,7 @@ export function getAllConversations(includeUnsaved?: string[]): Array<{ id: stri
 export function saveUsageStats(
     conversationId: string,
     newUsage: { promptTokens: number; completionTokens: number; totalTokens: number },
-    modelId: string,
-    requestCost: number
+    modelId: string
 ): void {
     if (typeof window === 'undefined') return;
 

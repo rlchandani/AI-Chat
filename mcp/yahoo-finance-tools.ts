@@ -207,6 +207,13 @@ export async function getMultipleStockQuotes(
 /**
  * Search for stocks by company name or ticker
  */
+interface YahooQuoteResult {
+  quoteType: string;
+  symbol: string;
+  longname?: string;
+  shortname?: string;
+  exchange?: string;
+}
 export async function searchStocks(
   query: string
 ): Promise<Array<{ symbol: string; name: string; type: string; exchange: string }>> {
@@ -224,8 +231,8 @@ export async function searchStocks(
   const quotes = data.quotes || [];
 
   return quotes
-    .filter((q: any) => q.quoteType === 'EQUITY' || q.quoteType === 'ETF')
-    .map((q: any) => ({
+    .filter((q: YahooQuoteResult) => q.quoteType === 'EQUITY' || q.quoteType === 'ETF')
+    .map((q: YahooQuoteResult) => ({
       symbol: q.symbol,
       name: q.longname || q.shortname || q.symbol,
       type: q.quoteType,

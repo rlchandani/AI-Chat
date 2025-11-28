@@ -61,6 +61,35 @@ async function geocodeLocation(location: string): Promise<{ lat: number; lon: nu
 /**
  * Fetch current weather for a location
  */
+interface ForecastDay {
+    highTemperature?: { degrees: number };
+    lowTemperature?: { degrees: number };
+    high?: number;
+    low?: number;
+}
+
+// Interface for Google Weather API Forecast Response
+interface GoogleForecastResponse {
+    forecast?: {
+        dailyForecast?: Array<ForecastDay>;
+        daily?: Array<ForecastDay>;
+    };
+    dailyForecast?: Array<ForecastDay>;
+    daily?: Array<ForecastDay>;
+    forecastHours?: Array<{
+        interval?: { startTime: string };
+        temperature?: { degrees: number };
+        weatherCondition?: {
+            description?: { text: string };
+            type?: string;
+            iconBaseUri?: string;
+        };
+        uvIndex?: number;
+    }>;
+    // Allow for other properties since the API is dynamic
+    [key: string]: unknown;
+}
+
 export async function getWeather(location: string, unitType: 'imperial' | 'metric' = 'imperial'): Promise<WeatherData> {
     if (!GOOGLE_API_KEY) {
         throw new Error('Google Maps API key not configured');
@@ -85,7 +114,7 @@ export async function getWeather(location: string, unitType: 'imperial' | 'metri
 
     // Try to fetch forecast (optional)
     // Using any here because the Google Weather API response structure is dynamic and complex
-    let forecastData: any = null;
+    let forecastData: GoogleForecastResponse | null = null;
     try {
         const forecastResponse = await fetch(forecastUrl);
         if (forecastResponse.ok) {
@@ -141,7 +170,7 @@ export async function getWeather(location: string, unitType: 'imperial' | 'metri
     if ((high === undefined || low === undefined) && forecastData) {
         const forecast = forecastData.forecast || forecastData;
         const dailyForecast = forecast.dailyForecast || forecast.daily || [];
-        const todayForecast = dailyForecast[0] || {};
+        const todayForecast = (dailyForecast[0] || {}) as ForecastDay;
         const highTemp = todayForecast.highTemperature?.degrees || todayForecast.high;
         const lowTemp = todayForecast.lowTemperature?.degrees || todayForecast.low;
         if (high === undefined && highTemp !== undefined) high = Math.round(highTemp);

@@ -31,7 +31,7 @@ async function deriveKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
         {
             name: 'PBKDF2',
             // Type assertion needed for Web Crypto API compatibility
-            salt: salt as any,
+            salt: salt as unknown as BufferSource,
             iterations: 100000,
             hash: 'SHA-256',
         },
@@ -79,9 +79,9 @@ export async function encryptApiKey(apiKey: string, pin: string): Promise<string
 
     const encrypted = await crypto.subtle.encrypt(
         // Type assertions needed for Web Crypto API compatibility
-        { name: 'AES-GCM', iv: iv as any },
+        { name: 'AES-GCM', iv: iv as unknown as BufferSource },
         key,
-        data as any
+        data as unknown as BufferSource
     );
 
     // Combine Salt + IV + encrypted data and encode as base64
@@ -136,14 +136,14 @@ export async function decryptApiKey(encryptedKey: string, pin: string): Promise<
 
         const decrypted = await crypto.subtle.decrypt(
             // Type assertions needed for Web Crypto API compatibility
-            { name: 'AES-GCM', iv: iv as any },
+            { name: 'AES-GCM', iv: iv as unknown as BufferSource },
             key,
-            data as any
+            data as unknown as BufferSource
         );
 
         const decoder = new TextDecoder();
         return decoder.decode(decrypted);
-    } catch (_error) {
+    } catch {
         // Decryption failed (likely wrong PIN)
         throw new Error('Invalid PIN or corrupted data');
     }

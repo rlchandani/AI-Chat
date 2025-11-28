@@ -64,7 +64,7 @@ export function saveBattleHistory(
         if (existing) {
             try {
                 existingHistory = JSON.parse(existing);
-            } catch (_e) {
+            } catch {
                 // Ignore parse errors
             }
         }
@@ -156,7 +156,7 @@ export function loadBattleHistory(conversationId?: string): { leftMessages: Mess
                 leftModel: history.leftModel,
                 rightModel: history.rightModel,
             };
-        } catch (e) {
+        } catch {
             const history: ChatHistory = JSON.parse(stored);
             return {
                 leftMessages: history.messages || [],
@@ -196,13 +196,13 @@ export function findEmptyBattleConversation(): string | null {
                         if (history.title === 'New Battle') {
                             return conv.id;
                         }
-                    } catch (e) {
+                    } catch {
                         const history: ChatHistory = JSON.parse(stored);
                         if (history.title === 'New Battle') {
                             return conv.id;
                         }
                     }
-                } catch (e) {
+                } catch {
                     // Skip if can't parse
                 }
             }
@@ -266,7 +266,7 @@ export function getBattleConversationMetadata(conversationId: string): { title: 
                 messageCount,
                 createdAt: history.createdAt || history.lastUpdated,
             };
-        } catch (e) {
+        } catch {
             const history: ChatHistory = JSON.parse(stored);
 
             const generateAutoTitle = (messages: Message[]): string | null => {
@@ -360,7 +360,7 @@ export function loadBattleUsageStats(conversationId?: string): { left?: UsageSta
                 left: history.leftUsageStats || undefined,
                 right: history.rightUsageStats || undefined,
             };
-        } catch (e) {
+        } catch {
             const history: ChatHistory = JSON.parse(stored);
             return {
                 left: history.usageStats || undefined,
@@ -377,7 +377,6 @@ export function saveBattleUsageStats(
     conversationId: string,
     newUsage: { promptTokens: number; completionTokens: number; totalTokens: number },
     modelId: string,
-    requestCost: number,
     chatSide: 'left' | 'right'
 ): void {
     if (typeof window === 'undefined') return;
@@ -396,7 +395,7 @@ export function saveBattleUsageStats(
         try {
             history = JSON.parse(stored);
             if (!('leftMessages' in history)) {
-                const oldHistory = history as any;
+                const oldHistory = history as unknown as ChatHistory & { leftModel?: string; rightModel?: string };
                 history = {
                     leftMessages: oldHistory.messages || [],
                     rightMessages: [],
@@ -410,7 +409,7 @@ export function saveBattleUsageStats(
                     rightUsageStats: undefined,
                 };
             }
-        } catch (e) {
+        } catch {
             // If we can't parse the existing data, don't create orphaned entries
             return;
         }
@@ -471,7 +470,7 @@ export function renameBattleConversation(conversationId: string, newTitle: strin
             try {
                 history = JSON.parse(stored);
                 if (!('leftMessages' in history)) {
-                    const oldHistory = history as any;
+                    const oldHistory = history as unknown as ChatHistory & { leftModel?: string; rightModel?: string };
                     history = {
                         leftMessages: oldHistory.messages || [],
                         rightMessages: [],
@@ -485,7 +484,7 @@ export function renameBattleConversation(conversationId: string, newTitle: strin
                         rightUsageStats: undefined,
                     };
                 }
-            } catch (e) {
+            } catch {
                 history = {
                     leftMessages: [],
                     rightMessages: [],
