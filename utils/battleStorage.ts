@@ -1,4 +1,5 @@
 import { Message, ChatHistory, UsageStats } from './chatStorage';
+import { calculateCost } from './modelStorage';
 
 const BATTLE_STORAGE_KEY = 'gemini-battle-history';
 const BATTLE_CONVERSATION_ID_KEY = 'gemini-current-battle-conversation-id';
@@ -63,7 +64,7 @@ export function saveBattleHistory(
         if (existing) {
             try {
                 existingHistory = JSON.parse(existing);
-            } catch (e) {
+            } catch (_e) {
                 // Ignore parse errors
             }
         }
@@ -426,7 +427,6 @@ export function saveBattleUsageStats(
 
         let incrementalCost = 0;
         if (incrementalPromptTokens > 0 || incrementalCompletionTokens > 0) {
-            const { calculateCost } = require('@/utils/modelStorage');
             incrementalCost = calculateCost(
                 incrementalPromptTokens,
                 incrementalCompletionTokens,

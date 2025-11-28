@@ -43,15 +43,15 @@ export function StockQuoteCard({
     const [stockData, setStockData] = useState<StockData | null>(
         initialPrice !== undefined
             ? {
-                  ticker: initialTicker,
-                  name: initialName || initialTicker,
-                  price: initialPrice,
-                  changePercent: initialChangePercent ?? 0,
-                  changeAmount: initialChangeAmount ?? 0,
-                  ytdChangePercent: initialYtdChangePercent ?? 0,
-                  ytdChangeAmount: initialYtdChangeAmount ?? 0,
-                  spyYtdChangePercent: initialSpyYtdChangePercent,
-              }
+                ticker: initialTicker,
+                name: initialName || initialTicker,
+                price: initialPrice,
+                changePercent: initialChangePercent ?? 0,
+                changeAmount: initialChangeAmount ?? 0,
+                ytdChangePercent: initialYtdChangePercent ?? 0,
+                ytdChangeAmount: initialYtdChangeAmount ?? 0,
+                spyYtdChangePercent: initialSpyYtdChangePercent,
+            }
             : null
     );
     const [loading, setLoading] = useState(autoFetch && initialPrice === undefined);
@@ -92,18 +92,18 @@ export function StockQuoteCard({
     // Share card as image - Gold Standard implementation
     const handleShare = useCallback(async () => {
         if (!cardRef.current || isSharing) return;
-        
+
         setIsSharing(true);
         try {
             const node = cardRef.current;
-            
+
             // 1. Wait for fonts to be ready to prevent "glitchy" text (FOUT fix)
             await document.fonts.ready;
-            
+
             // Detect if dark mode - use slate colors that match the card
             const isDarkMode = document.documentElement.classList.contains('dark');
             const bgColor = isDarkMode ? '#1e293b' : '#f8fafc'; // slate-800 / slate-50
-            
+
             // Capture the card as PNG blob using html-to-image (Gold Standard config)
             const blob = await htmlToImage.toBlob(node, {
                 pixelRatio: window.devicePixelRatio || 2, // Retina display support
@@ -113,7 +113,7 @@ export function StockQuoteCard({
                 height: node.scrollHeight,
                 style: { transform: 'none', margin: '0' }, // Prevent layout shifts
             });
-            
+
             if (!blob) {
                 throw new Error('Failed to create image');
             }
@@ -149,7 +149,7 @@ export function StockQuoteCard({
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-            
+
             setShareSuccess(true);
             setTimeout(() => setShareSuccess(false), 2000);
         } catch (err) {
@@ -190,7 +190,7 @@ export function StockQuoteCard({
 
     if (loading) {
         return (
-            <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-6 flex items-center justify-center">
+            <div className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-6 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3 text-foreground">
                     <Loader2 className="w-8 h-8 animate-spin" />
                     <p className="text-sm">Loading stock data...</p>
@@ -201,7 +201,7 @@ export function StockQuoteCard({
 
     if (error) {
         return (
-            <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-6 flex items-center justify-center">
+            <div className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-6 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3 text-foreground">
                     <TrendingUp className="w-8 h-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">{error}</p>
@@ -215,7 +215,7 @@ export function StockQuoteCard({
     }
 
     const { ticker, name, price, changePercent, changeAmount, ytdChangePercent, ytdChangeAmount, spyYtdChangePercent } = stockData;
-    
+
     // Helper to check if a number is valid and finite
     const isValidNumber = (val: unknown): val is number => typeof val === 'number' && Number.isFinite(val);
 
@@ -236,7 +236,7 @@ export function StockQuoteCard({
     // SPY YTD - treat 0 as valid since SPY can have 0% change
     const normalizedSpyYtd = isValidNumber(spyYtdChangePercent) ? spyYtdChangePercent : undefined;
     const hasSpyYtd = normalizedSpyYtd !== undefined;
-    
+
     // Calculate YTD vs SPY comparison
     const ytdVsSpy = isValidNumber(ytdChangePercent) && hasSpyYtd
         ? ytdChangePercent - normalizedSpyYtd
@@ -275,80 +275,77 @@ export function StockQuoteCard({
             </button>
 
             {/* Card content - this gets captured as image */}
-            <div 
+            <div
                 ref={cardRef}
-                className="w-full h-full rounded-2xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 shadow-sm dark:shadow-md p-4 space-y-4 flex flex-col"
+                className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-4 space-y-4 flex flex-col"
             >
                 <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">
+                        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
                             <span>Ticker</span>
                         </div>
-                        <div className="text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100">{ticker?.toUpperCase() || '—'}</div>
-                        <div className="text-sm text-slate-700 dark:text-slate-300 truncate max-w-[220px]">{name || 'Unknown company'}</div>
+                        <div className="text-3xl font-black tracking-tight text-foreground">{ticker?.toUpperCase() || '—'}</div>
+                        <div className="text-sm text-muted-foreground truncate max-w-[220px]">{name || 'Unknown company'}</div>
                     </div>
                     <div className="text-right">
-                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 mb-1">Price</div>
-                        <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Price</div>
+                        <div className="text-3xl font-bold text-foreground">
                             {Number.isFinite(price) ? `$${price.toFixed(2)}` : '—'}
                         </div>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
-                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300">Change</div>
+                    <div className="rounded-xl border border-border bg-muted p-3">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Change</div>
                         <div
-                            className={`text-lg font-semibold flex items-center gap-1 ${
-                                isChangePositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                            }`}
+                            className={`text-lg font-semibold flex items-center gap-1 ${isChangePositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                                }`}
                         >
                             <span>{isChangePositive ? '▲' : '▼'}</span>
                             {isValidNumber(changePercent) ? formatPercent(changePercent) : '—'}
                         </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                        <div className="text-xs text-muted-foreground mt-1">
                             {formatAmount(normalizedChangeAmount)}
                         </div>
                     </div>
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
-                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300">YTD</div>
+                    <div className="rounded-xl border border-border bg-muted p-3">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">YTD</div>
                         <div
-                            className={`text-lg font-semibold flex items-center gap-1 ${
-                                isYtdPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                            }`}
+                            className={`text-lg font-semibold flex items-center gap-1 ${isYtdPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                                }`}
                         >
                             <span>{isYtdPositive ? '▲' : '▼'}</span>
                             {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'}
                         </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                        <div className="text-xs text-muted-foreground mt-1">
                             {formatAmount(normalizedYtdAmount)}
                         </div>
                     </div>
                 </div>
 
                 {(isValidNumber(ytdChangePercent) || hasSpyYtd) && (
-                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 p-3">
-                        <div className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300">YTD vs SPY</div>
+                    <div className="rounded-xl border border-border bg-muted p-3">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">YTD vs SPY</div>
                         <div
-                            className={`text-lg font-semibold flex items-center gap-1 ${
-                                ytdVsSpy !== undefined
-                                    ? ytdVsSpy >= 0
-                                        ? 'text-green-600 dark:text-green-400'
-                                        : 'text-red-600 dark:text-red-400'
-                                    : 'text-slate-900 dark:text-slate-100'
-                            }`}
+                            className={`text-lg font-semibold flex items-center gap-1 ${ytdVsSpy !== undefined
+                                ? ytdVsSpy >= 0
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : 'text-red-600 dark:text-red-400'
+                                : 'text-foreground'
+                                }`}
                         >
                             {ytdVsSpy !== undefined && <span>{ytdVsSpy >= 0 ? '▲' : '▼'}</span>}
                             {ytdVsSpy !== undefined ? formatPercent(ytdVsSpy) : '—'}
                         </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                        <div className="text-xs text-muted-foreground mt-1">
                             Stock YTD: {isValidNumber(ytdChangePercent) ? formatPercent(ytdChangePercent) : '—'} • SPY YTD:{' '}
                             {hasSpyYtd ? formatPercent(normalizedSpyYtd) : 'Unavailable'}
                         </div>
                     </div>
                 )}
 
-                <div className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground text-right">
                     Sourced from Yahoo Finance
                 </div>
             </div>

@@ -1,8 +1,18 @@
+import { calculateCost } from '@/utils/modelStorage';
+
+export interface ToolInvocation {
+    toolCallId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+    state?: 'call' | 'result' | 'partial-call';
+    result?: unknown;
+}
+
 export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'system' | 'data';
     content: string;
-    toolInvocations?: any[];
+    toolInvocations?: ToolInvocation[];
     timestamp?: number;
 }
 
@@ -45,7 +55,7 @@ const CONVERSATION_ID_KEY = 'gemini-current-conversation-id';
  */
 export function getCurrentConversationId(): string {
     if (typeof window === 'undefined') return '';
-    
+
     let conversationId = localStorage.getItem(CONVERSATION_ID_KEY);
     if (!conversationId) {
         conversationId = `conv-${Date.now()}`;
@@ -68,32 +78,32 @@ export function setCurrentConversationId(conversationId: string): void {
  */
 export function saveChatHistory(messages: Message[]): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const conversationId = getCurrentConversationId();
-        
+
         // Don't save empty conversations
         if (messages.length === 0) {
             return;
         }
-        
+
         // Load existing history to preserve title and createdAt
         const existing = localStorage.getItem(`${STORAGE_KEY}-${conversationId}`);
         let existingHistory: ChatHistory | null = null;
         if (existing) {
             try {
                 existingHistory = JSON.parse(existing);
-            } catch (e) {
+            } catch (_e) {
                 // Ignore parse errors
             }
         }
-        
+
         // Generate auto-title from first user message
         const generateAutoTitle = (messages: Message[]): string | null => {
             if (messages.length === 0) return null;
             const firstUserMessage = messages.find(m => m.role === 'user');
             if (!firstUserMessage) return null;
-            
+
             let title = firstUserMessage.content.slice(0, 50).trim();
             if (firstUserMessage.content.length > 50) {
                 title += '...';
@@ -103,19 +113,19 @@ export function saveChatHistory(messages: Message[]): void {
 
         const autoTitle = generateAutoTitle(messages);
         const existingTitle = existingHistory?.title;
-        
+
         // Determine if title was manually set
         // If existing title matches what would be auto-generated, it's still auto-generated
         // Otherwise, it was manually renamed
-        const isManuallySet = existingTitle && existingTitle !== autoTitle && 
-                              existingTitle !== 'New Conversation';
-        
+        const isManuallySet = existingTitle && existingTitle !== autoTitle &&
+            existingTitle !== 'New Conversation';
+
         // Only update lastUpdated if there are new messages (message count increased)
         // This prevents conversations from moving to top just by selecting them
         const existingMessageCount = existingHistory?.messages?.length || 0;
         const newMessageCount = messages.length;
         const hasNewMessages = newMessageCount > existingMessageCount;
-        
+
         const history: ChatHistory = {
             messages,
             lastUpdated: hasNewMessages ? Date.now() : (existingHistory?.lastUpdated || Date.now()),
@@ -125,17 +135,17 @@ export function saveChatHistory(messages: Message[]): void {
             usageStats: existingHistory?.usageStats, // Preserve existing usage stats
             model: existingHistory?.model, // Preserve model selection
         };
-        
+
         // Save current conversation
         localStorage.setItem(`${STORAGE_KEY}-${conversationId}`, JSON.stringify(history));
-        
+
         // Also save to a list of all conversations
         const conversationsList = getAllConversationIds();
         if (!conversationsList.includes(conversationId)) {
             conversationsList.push(conversationId);
             localStorage.setItem(`${STORAGE_KEY}-list`, JSON.stringify(conversationsList));
         }
-        
+
         // Dispatch event to notify other components
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('conversationUpdated'));
@@ -154,13 +164,13 @@ export function saveChatHistory(messages: Message[]): void {
  */
 export function loadChatHistory(conversationId?: string): Message[] {
     if (typeof window === 'undefined') return [];
-    
+
     try {
         const id = conversationId || getCurrentConversationId();
         const stored = localStorage.getItem(`${STORAGE_KEY}-${id}`);
-        
+
         if (!stored) return [];
-        
+
         const history: ChatHistory = JSON.parse(stored);
         return history.messages || [];
     } catch (error) {
@@ -174,10 +184,10 @@ export function loadChatHistory(conversationId?: string): Message[] {
  */
 export function clearChatHistory(conversationId?: string): void {
     if (typeof window === 'undefined') return;
-    
+
     const id = conversationId || getCurrentConversationId();
     localStorage.removeItem(`${STORAGE_KEY}-${id}`);
-    
+
     // Remove from conversations list
     const conversationsList = getAllConversationIds();
     const filtered = conversationsList.filter(cid => cid !== id);
@@ -189,7 +199,7 @@ export function clearChatHistory(conversationId?: string): void {
  */
 export function clearAllChatHistory(): void {
     if (typeof window === 'undefined') return;
-    
+
     const conversationsList = getAllConversationIds();
     conversationsList.forEach(id => {
         localStorage.removeItem(`${STORAGE_KEY}-${id}`);
@@ -203,7 +213,7 @@ export function clearAllChatHistory(): void {
  */
 export function getAllConversationIds(): string[] {
     if (typeof window === 'undefined') return [];
-    
+
     try {
         const stored = localStorage.getItem(`${STORAGE_KEY}-list`);
         return stored ? JSON.parse(stored) : [];
@@ -219,9 +229,9 @@ export function getAllConversationIds(): string[] {
  */
 export function findEmptyConversation(): string | null {
     if (typeof window === 'undefined') return null;
-    
+
     const conversations = getAllConversations();
-    
+
     // Find a conversation that:
     // 1. Has no messages
     // 2. Hasn't been manually renamed (title is "New Conversation")
@@ -234,7 +244,7 @@ export function findEmptyConversation(): string | null {
                 try {
                     const history: ChatHistory = JSON.parse(stored);
                     const storedTitle = history.title;
-                    
+
                     // If title is "New Conversation", it hasn't been renamed
                     // If it has any other title, it was manually renamed (and saved)
                     if (storedTitle === 'New Conversation') {
@@ -246,7 +256,7 @@ export function findEmptyConversation(): string | null {
             }
         }
     }
-    
+
     return null;
 }
 
@@ -256,22 +266,22 @@ export function findEmptyConversation(): string | null {
  */
 export function createNewConversation(): string {
     if (typeof window === 'undefined') return '';
-    
+
     // Check if there's an existing empty conversation that hasn't been renamed
     const existingEmpty = findEmptyConversation();
     if (existingEmpty) {
         setCurrentConversationId(existingEmpty);
         return existingEmpty;
     }
-    
+
     // Otherwise, create a new one (but don't save it yet - it will be saved when there's interaction or rename)
     const newId = `conv-${Date.now()}`;
     setCurrentConversationId(newId);
-    
+
     // Don't save empty conversations - they'll be saved when:
     // 1. First message is sent (via saveChatHistory)
     // 2. Conversation is renamed (via renameConversation)
-    
+
     return newId;
 }
 
@@ -281,11 +291,11 @@ export function createNewConversation(): string {
  */
 export function renameConversation(conversationId: string, newTitle: string): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const stored = localStorage.getItem(`${STORAGE_KEY}-${conversationId}`);
         let history: ChatHistory;
-        
+
         if (stored) {
             history = JSON.parse(stored);
         } else {
@@ -297,7 +307,7 @@ export function renameConversation(conversationId: string, newTitle: string): vo
                 title: newTitle.trim() || 'New Conversation',
                 createdAt: Date.now(),
             };
-            
+
             // Add to conversations list
             const conversationsList = getAllConversationIds();
             if (!conversationsList.includes(conversationId)) {
@@ -305,12 +315,12 @@ export function renameConversation(conversationId: string, newTitle: string): vo
                 localStorage.setItem(`${STORAGE_KEY}-list`, JSON.stringify(conversationsList));
             }
         }
-        
+
         history.title = newTitle.trim() || 'New Conversation';
         history.lastUpdated = Date.now();
-        
+
         localStorage.setItem(`${STORAGE_KEY}-${conversationId}`, JSON.stringify(history));
-        
+
         // Dispatch event
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('conversationUpdated'));
@@ -325,19 +335,19 @@ export function renameConversation(conversationId: string, newTitle: string): vo
  */
 export function deleteConversation(conversationId: string): void {
     if (typeof window === 'undefined') return;
-    
+
     localStorage.removeItem(`${STORAGE_KEY}-${conversationId}`);
-    
+
     // Remove from conversations list
     const conversationsList = getAllConversationIds();
     const filtered = conversationsList.filter(id => id !== conversationId);
     localStorage.setItem(`${STORAGE_KEY}-list`, JSON.stringify(filtered));
-    
+
     // Dispatch event
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('conversationUpdated'));
     }
-    
+
     // If this was the current conversation, switch to another or create new
     if (getCurrentConversationId() === conversationId) {
         if (filtered.length > 0) {
@@ -354,7 +364,7 @@ export function deleteConversation(conversationId: string): void {
 export function exportChatHistory(conversationId?: string): string {
     const id = conversationId || getCurrentConversationId();
     const messages = loadChatHistory(id);
-    
+
     return JSON.stringify({
         conversationId: id,
         messages,
@@ -367,19 +377,19 @@ export function exportChatHistory(conversationId?: string): string {
  */
 export function getConversationMetadata(conversationId: string): { title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
     if (typeof window === 'undefined') return null;
-    
+
     try {
         const stored = localStorage.getItem(`${STORAGE_KEY}-${conversationId}`);
         if (!stored) return null;
-        
+
         const history: ChatHistory = JSON.parse(stored);
-        
+
         // Generate auto-title from first user message
         const generateAutoTitle = (messages: Message[]): string | null => {
             if (messages.length === 0) return null;
             const firstUserMessage = messages.find(m => m.role === 'user');
             if (!firstUserMessage) return null;
-            
+
             let title = firstUserMessage.content.slice(0, 50).trim();
             if (firstUserMessage.content.length > 50) {
                 title += '...';
@@ -389,14 +399,14 @@ export function getConversationMetadata(conversationId: string): { title: string
 
         const autoTitle = generateAutoTitle(history.messages);
         const storedTitle = history.title;
-        
+
         // If title exists and doesn't match auto-title, it was manually set
         // Otherwise, use auto-generated title
-        const isManuallySet = storedTitle && storedTitle !== autoTitle && 
-                              storedTitle !== 'New Conversation';
-        
+        const isManuallySet = storedTitle && storedTitle !== autoTitle &&
+            storedTitle !== 'New Conversation';
+
         const title = isManuallySet ? storedTitle : (autoTitle || storedTitle || 'New Conversation');
-        
+
         return {
             title,
             lastUpdated: history.lastUpdated,
@@ -414,11 +424,11 @@ export function getConversationMetadata(conversationId: string): { title: string
  */
 export function getUnsavedConversationMetadata(conversationId: string): { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
     if (typeof window === 'undefined') return null;
-    
+
     // Check if it's the current conversation and not saved
     const stored = localStorage.getItem(`${STORAGE_KEY}-${conversationId}`);
     if (stored) return null; // It's saved, not unsaved
-    
+
     // Return metadata for unsaved conversation
     return {
         id: conversationId,
@@ -434,7 +444,7 @@ export function getUnsavedConversationMetadata(conversationId: string): { id: st
  */
 export function getAllConversations(includeUnsaved?: string[]): Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> {
     if (typeof window === 'undefined') return [];
-    
+
     const conversationIds = getAllConversationIds();
     const savedConvs = conversationIds
         .map(id => {
@@ -443,7 +453,7 @@ export function getAllConversations(includeUnsaved?: string[]): Array<{ id: stri
             return { id, ...metadata };
         })
         .filter((conv): conv is { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } => conv !== null);
-    
+
     // Add unsaved conversations if provided
     const unsavedConvs: Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> = [];
     if (includeUnsaved) {
@@ -457,7 +467,7 @@ export function getAllConversations(includeUnsaved?: string[]): Array<{ id: stri
             }
         }
     }
-    
+
     // Combine and sort by lastUpdated (most recent first)
     return [...savedConvs, ...unsavedConvs].sort((a, b) => b.lastUpdated - a.lastUpdated);
 }
@@ -475,11 +485,11 @@ export function saveUsageStats(
     requestCost: number
 ): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const stored = localStorage.getItem(`${STORAGE_KEY}-${conversationId}`);
         let history: ChatHistory;
-        
+
         if (stored) {
             history = JSON.parse(stored);
         } else {
@@ -492,7 +502,7 @@ export function saveUsageStats(
                 createdAt: Date.now(),
             };
         }
-        
+
         // Get existing usage stats or initialize
         const existingStats = history.usageStats || {
             promptTokens: 0,
@@ -500,23 +510,21 @@ export function saveUsageStats(
             totalTokens: 0,
             totalCost: 0,
         };
-        
+
         // Calculate incremental tokens (difference between new and previous)
         const incrementalPromptTokens = Math.max(0, newUsage.promptTokens - existingStats.promptTokens);
         const incrementalCompletionTokens = Math.max(0, newUsage.completionTokens - existingStats.completionTokens);
-        
+
         // Calculate incremental cost only if there are new tokens
         let incrementalCost = 0;
         if (incrementalPromptTokens > 0 || incrementalCompletionTokens > 0) {
-            // Import calculateCost function
-            const { calculateCost } = require('@/utils/modelStorage');
             incrementalCost = calculateCost(
                 incrementalPromptTokens,
                 incrementalCompletionTokens,
                 modelId
             );
         }
-        
+
         // Update stats with latest cumulative values from API
         // Accumulate cost incrementally
         const updatedStats: UsageStats = {
@@ -526,12 +534,12 @@ export function saveUsageStats(
             totalCost: existingStats.totalCost + incrementalCost, // Accumulate incremental cost
             lastModel: modelId,
         };
-        
+
         history.usageStats = updatedStats;
         history.lastUpdated = Date.now();
-        
+
         localStorage.setItem(`${STORAGE_KEY}-${conversationId}`, JSON.stringify(history));
-        
+
         // Dispatch event to notify other components
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('conversationUpdated'));
@@ -546,13 +554,13 @@ export function saveUsageStats(
  */
 export function loadUsageStats(conversationId?: string): UsageStats | null {
     if (typeof window === 'undefined') return null;
-    
+
     try {
         const id = conversationId || getCurrentConversationId();
         const stored = localStorage.getItem(`${STORAGE_KEY}-${id}`);
-        
+
         if (!stored) return null;
-        
+
         const history: ChatHistory = JSON.parse(stored);
         return history.usageStats || null;
     } catch (error) {
@@ -566,11 +574,11 @@ export function loadUsageStats(conversationId?: string): UsageStats | null {
  */
 export function saveConversationModel(conversationId: string, modelId: string): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const stored = localStorage.getItem(`${STORAGE_KEY}-${conversationId}`);
         let history: ChatHistory;
-        
+
         if (stored) {
             history = JSON.parse(stored);
         } else {
@@ -582,7 +590,7 @@ export function saveConversationModel(conversationId: string, modelId: string): 
                 title: 'New Conversation',
                 createdAt: Date.now(),
             };
-            
+
             // Add to conversations list
             const conversationsList = getAllConversationIds();
             if (!conversationsList.includes(conversationId)) {
@@ -590,9 +598,9 @@ export function saveConversationModel(conversationId: string, modelId: string): 
                 localStorage.setItem(`${STORAGE_KEY}-list`, JSON.stringify(conversationsList));
             }
         }
-        
+
         history.model = modelId;
-        
+
         localStorage.setItem(`${STORAGE_KEY}-${conversationId}`, JSON.stringify(history));
     } catch (error) {
         console.error('Failed to save conversation model:', error);
@@ -604,13 +612,13 @@ export function saveConversationModel(conversationId: string, modelId: string): 
  */
 export function loadConversationModel(conversationId?: string): string | null {
     if (typeof window === 'undefined') return null;
-    
+
     try {
         const id = conversationId || getCurrentConversationId();
         const stored = localStorage.getItem(`${STORAGE_KEY}-${id}`);
-        
+
         if (!stored) return null;
-        
+
         const history: ChatHistory = JSON.parse(stored);
         return history.model || null;
     } catch (error) {

@@ -84,6 +84,7 @@ export async function getWeather(location: string, unitType: 'imperial' | 'metri
     const currentData = await weatherResponse.json();
 
     // Try to fetch forecast (optional)
+    // Using any here because the Google Weather API response structure is dynamic and complex
     let forecastData: any = null;
     try {
         const forecastResponse = await fetch(forecastUrl);
@@ -238,7 +239,7 @@ export async function searchLocations(
         return [];
     }
 
-    return data.results.slice(0, 5).map((result: any) => ({
+    return data.results.slice(0, 5).map((result: { formatted_address: string }) => ({
         name: result.formatted_address.split(',')[0],
         formattedAddress: result.formatted_address,
     }));

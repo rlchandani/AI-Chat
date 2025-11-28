@@ -208,7 +208,7 @@ export async function unlockApiKeys(pin: string): Promise<boolean> {
         // Store PIN in memory for this session
         setCurrentPin(pin);
         return true;
-    } catch (error) {
+    } catch (_error) {
         return false;
     }
 }
