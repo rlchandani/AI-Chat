@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, type ReactNode } from 'react';
-import { useManualChat } from '@/hooks/use-manual-chat';
+import { useManualChat, type ApiKeyError } from '@/hooks/use-manual-chat';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { InputArea } from '@/components/chat/InputArea';
 import { ModelSelector } from '@/components/chat/ModelSelector';
@@ -9,10 +9,12 @@ import { ConversationsSidebar } from '@/components/chat/ConversationsSidebar';
 import { ModelChangeDialog } from '@/components/chat/ModelChangeDialog';
 import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ShareConversation } from '@/components/chat/ShareConversation';
-import { Settings } from '@/components/chat/Settings';
+import { Settings, type HighlightApiKey } from '@/components/chat/Settings';
+import { APIKeyModal, type ApiKeyType } from '@/components/chat/APIKeyModal';
 import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel } from '@/utils/modelStorage';
 import { getCurrentConversationId, createNewConversation, loadChatHistory, loadUsageStats, getConversationMetadata, getUnsavedConversationMetadata, setCurrentConversationId as saveCurrentConversationId, findEmptyConversation, saveConversationModel, loadConversationModel } from '@/utils/chatStorage';
-import { getSetting } from '@/utils/settingsStorage';
+import { getSetting, apiKeysNeedUnlock, unlockApiKeys, isApiKeyLocked } from '@/utils/settingsStorage';
+import { PinUnlockModal } from '@/components/chat/PinUnlockModal';
 import { Menu, Settings as SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -29,13 +31,34 @@ export default function Home() {
   const [autoHideSidebar, setAutoHideSidebar] = useState(true);
   const [conversationTitle, setConversationTitle] = useState<string>('New Conversation');
   const [showSettings, setShowSettings] = useState(false);
+  const [highlightApiKey, setHighlightApiKey] = useState<HighlightApiKey>(null);
+  const [apiKeyModal, setApiKeyModal] = useState<{ isOpen: boolean; keyType: ApiKeyType | null }>({
+    isOpen: false,
+    keyType: null,
+  });
   const [modelChangeDialog, setModelChangeDialog] = useState<{ isOpen: boolean; newModelId: string | null }>({
     isOpen: false,
     newModelId: null,
   });
-  const { messages, isLoading, stop, append, clearMessages, setMessages, usageInfo } = useManualChat({
+  const [showPinUnlock, setShowPinUnlock] = useState(false);
+
+  const handleApiKeyError = (error: ApiKeyError) => {
+    // If keys are encrypted and locked, show unlock modal instead of missing key modal
+    if (isApiKeyLocked(error.keyType)) {
+      setShowPinUnlock(true);
+      return;
+    }
+
+    setApiKeyModal({
+      isOpen: true,
+      keyType: error.keyType,
+    });
+  };
+
+  const { messages, isLoading, stop, append, clearMessages, setMessages, usageInfo, apiKeyError, clearApiKeyError } = useManualChat({
     api: '/api/chat',
     model: selectedModel,
+    onApiKeyError: handleApiKeyError,
   });
 
   // Initialize model and conversation from localStorage only on client after mount
@@ -121,6 +144,23 @@ export default function Home() {
       } else {
         const unsavedMetadata = getUnsavedConversationMetadata(convId);
         setConversationTitle(unsavedMetadata?.title || 'New Conversation');
+      }
+
+      // Check if we should open settings with a specific API key highlighted
+      const openSettingsParam = urlParams.get('openSettings');
+      if (openSettingsParam && ['gemini', 'openai'].includes(openSettingsParam)) {
+        setHighlightApiKey(openSettingsParam as HighlightApiKey);
+        setShowSettings(true);
+
+        // Clean up URL by removing the openSettings parameter
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('openSettings');
+        router.replace(cleanUrl.pathname + cleanUrl.search, { scroll: false });
+      }
+
+      // Check if encrypted API keys need to be unlocked
+      if (apiKeysNeedUnlock()) {
+        setShowPinUnlock(true);
       }
     }
   }, []);
@@ -480,7 +520,14 @@ export default function Home() {
         </header>
 
         {/* Settings Panel */}
-        <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+        <Settings
+          isOpen={showSettings}
+          onClose={() => {
+            setShowSettings(false);
+            setHighlightApiKey(null);
+          }}
+          highlightApiKey={highlightApiKey}
+        />
 
         {/* Chat Area */}
         <ChatInterface messages={messages} isLoading={isLoading} modelId={selectedModel} />
@@ -508,6 +555,40 @@ export default function Home() {
         newModelId={modelChangeDialog.newModelId || ''}
         onStartNewConversation={handleModelChangeConfirm}
         onCancel={handleModelChangeCancel}
+      />
+
+      {/* API Key Modal */}
+      {apiKeyModal.keyType && (
+        <APIKeyModal
+          isOpen={apiKeyModal.isOpen}
+          onClose={() => {
+            setApiKeyModal({ isOpen: false, keyType: null });
+            clearApiKeyError();
+          }}
+          missingKey={apiKeyModal.keyType}
+          onGoToSettings={() => {
+            // Map ApiKeyType to HighlightApiKey
+            const keyTypeMap: Record<ApiKeyType, HighlightApiKey> = {
+              gemini: 'gemini',
+              openai: 'openai',
+            };
+            setHighlightApiKey(keyTypeMap[apiKeyModal.keyType!]);
+            setShowSettings(true);
+          }}
+        />
+      )}
+
+      {/* PIN Unlock Modal */}
+      <PinUnlockModal
+        isOpen={showPinUnlock}
+        onUnlock={async (pin) => {
+          const success = await unlockApiKeys(pin);
+          if (success) {
+            setShowPinUnlock(false);
+          }
+          return success;
+        }}
+        onCancel={() => setShowPinUnlock(false)}
       />
     </main>
   );

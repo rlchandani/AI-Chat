@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Loader2 } from 'lucide-react';
+import { Search, Loader2, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 interface LocationOption {
@@ -32,6 +32,7 @@ export function LocationAutocomplete({
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [serverError, setServerError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<NodeJS.Timeout>();
@@ -52,14 +53,24 @@ export function LocationAutocomplete({
     // Debounce the search
     debounceRef.current = setTimeout(async () => {
       setIsLoading(true);
+      setServerError(false);
       try {
-        const response = await fetch(`/api/weather/geocode?q=${encodeURIComponent(value)}`);
-        if (response.ok) {
-          const data = await response.json();
-          setSuggestions(data.results || []);
-          setShowSuggestions(true);
-          setSelectedIndex(-1);
+        // Google Maps API key is configured server-side
+        const url = `/api/weather/geocode?q=${encodeURIComponent(value)}`;
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          setServerError(true);
+          setSuggestions([]);
+          setShowSuggestions(false);
+          return;
         }
+        
+        const data = await response.json();
+        setSuggestions(data.results || []);
+        setShowSuggestions(true);
+        setSelectedIndex(-1);
       } catch (error) {
         console.error('Geocoding error:', error);
         setSuggestions([]);
@@ -142,7 +153,21 @@ export function LocationAutocomplete({
         )}
       </div>
 
-      {showSuggestions && suggestions.length > 0 && (
+      {serverError && (
+        <div
+          className="absolute z-50 w-full mt-1 bg-card border border-amber-500/50 rounded-lg shadow-lg p-3"
+        >
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <AlertTriangle size={16} />
+            <span className="text-sm font-medium">Location search unavailable</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Server configuration issue. Please contact the administrator.
+          </p>
+        </div>
+      )}
+
+      {showSuggestions && suggestions.length > 0 && !serverError && (
         <div
           ref={suggestionsRef}
           className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto"

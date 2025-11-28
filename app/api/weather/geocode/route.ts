@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 10;
 
-// Get Google API key from environment variables
-const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
-
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
@@ -14,9 +11,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
+    // Google Maps API key is configured server-side only
+    const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+
     if (!GOOGLE_API_KEY) {
+      console.error('GOOGLE_MAPS_API_KEY environment variable not configured');
       return NextResponse.json(
-        { error: 'Google Maps API key not configured' },
+        { error: 'Google Maps API key not configured on server' },
         { status: 500 }
       );
     }

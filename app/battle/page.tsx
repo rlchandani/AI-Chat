@@ -10,8 +10,11 @@ import { ShareConversation } from '@/components/chat/ShareConversation';
 import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel, getAllModels } from '@/utils/modelStorage';
 import { getCurrentBattleConversationId, createNewBattleConversation, loadBattleHistory, loadBattleUsageStats, getBattleConversationMetadata, getUnsavedBattleConversationMetadata, setCurrentBattleConversationId as saveCurrentBattleConversationId, findEmptyBattleConversation, saveBattleHistory, saveBattleUsageStats, getAllBattleConversationIds } from '@/utils/battleStorage';
 import { ManualChatStorage, useManualChat } from '@/hooks/use-manual-chat';
-import { getSetting } from '@/utils/settingsStorage';
-import { Settings } from '@/components/chat/Settings';
+import { getSetting, apiKeysNeedUnlock, unlockApiKeys, isApiKeyLocked, getApiKey } from '@/utils/settingsStorage';
+import { Settings, type HighlightApiKey } from '@/components/chat/Settings';
+import { APIKeyModal, type ApiKeyType } from '@/components/chat/APIKeyModal';
+import { PinUnlockModal } from '@/components/chat/PinUnlockModal';
+import { ApiKeyError } from '@/hooks/use-manual-chat';
 import { Menu, AlertCircle, Settings as SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -28,6 +31,25 @@ export default function BattlePage() {
   const [showSettings, setShowSettings] = useState(false);
   const [modelConflict, setModelConflict] = useState<string | null>(null);
   const [hasInteractionStarted, setHasInteractionStarted] = useState(false);
+  const [highlightApiKey, setHighlightApiKey] = useState<HighlightApiKey>(null);
+  const [apiKeyModal, setApiKeyModal] = useState<{ isOpen: boolean; keyType: ApiKeyType | null }>({
+    isOpen: false,
+    keyType: null,
+  });
+  const [showPinUnlock, setShowPinUnlock] = useState(false);
+
+  const handleApiKeyError = (error: ApiKeyError) => {
+    // If keys are encrypted and locked, show unlock modal instead of missing key modal
+    if (isApiKeyLocked(error.keyType)) {
+      setShowPinUnlock(true);
+      return;
+    }
+
+    setApiKeyModal({
+      isOpen: true,
+      keyType: error.keyType,
+    });
+  };
 
   // Track which conversation ID the current messages belong to
   // This prevents saving messages to the wrong ID during switching/creation
@@ -48,6 +70,7 @@ export default function BattlePage() {
     api: '/api/chat',
     model: leftModel,
     storage: battleStorageHandlers,
+    onApiKeyError: handleApiKeyError,
   });
 
   // Right chat (Chat 2)
@@ -57,6 +80,7 @@ export default function BattlePage() {
     api: '/api/chat',
     model: rightModel,
     storage: battleStorageHandlers,
+    onApiKeyError: handleApiKeyError,
   });
 
   // Initialize models and conversation
@@ -166,6 +190,24 @@ export default function BattlePage() {
         const unsavedMetadata = getUnsavedBattleConversationMetadata(convId);
         setConversationTitle(unsavedMetadata?.title || 'New Battle');
       }
+
+
+      // Check if we should open settings with a specific API key highlighted
+      const openSettingsParam = urlParams.get('openSettings');
+      if (openSettingsParam && ['gemini', 'openai'].includes(openSettingsParam)) {
+        setHighlightApiKey(openSettingsParam as HighlightApiKey);
+        setShowSettings(true);
+
+        // Clean up URL by removing the openSettings parameter
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('openSettings');
+        router.replace(cleanUrl.pathname + cleanUrl.search, { scroll: false });
+      }
+
+      // Check if encrypted API keys need to be unlocked
+      if (apiKeysNeedUnlock()) {
+        setShowPinUnlock(true);
+      }
     }
   }, []);
 
@@ -212,6 +254,41 @@ export default function BattlePage() {
       return;
     }
 
+    // Validate API keys for both models BEFORE sending
+    const leftModelInfo = getModelInfo(leftModel);
+    const rightModelInfo = getModelInfo(rightModel);
+
+    // Helper to map provider to key type
+    const getApiKeyType = (provider: string): ApiKeyType => {
+      return provider === 'google' ? 'gemini' : 'openai';
+    };
+
+    // Check Left Model Key
+    if (leftModelInfo) {
+      const keyType = getApiKeyType(leftModelInfo.provider);
+      const apiKey = getApiKey(keyType);
+      if (!apiKey) {
+        handleApiKeyError({
+          type: 'MISSING_API_KEY',
+          keyType: keyType,
+        });
+        return;
+      }
+    }
+
+    // Check Right Model Key
+    if (rightModelInfo) {
+      const keyType = getApiKeyType(rightModelInfo.provider);
+      const apiKey = getApiKey(keyType);
+      if (!apiKey) {
+        handleApiKeyError({
+          type: 'MISSING_API_KEY',
+          keyType: keyType,
+        });
+        return;
+      }
+    }
+
     // Mark that interaction has started (first message sent)
     if (!hasInteractionStarted) {
       setHasInteractionStarted(true);
@@ -256,7 +333,7 @@ export default function BattlePage() {
     // AND the old conversation still exists in storage (wasn't just deleted)
     const existingIds = getAllBattleConversationIds();
     const oldConversationStillExists = existingIds.includes(oldConversationId);
-    
+
     if (oldConversationId &&
       oldConversationId !== conversationId &&
       loadedConversationIdRef.current === oldConversationId &&
@@ -594,7 +671,14 @@ export default function BattlePage() {
         </header>
 
         {/* Settings Panel */}
-        <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+        <Settings
+          isOpen={showSettings}
+          onClose={() => {
+            setShowSettings(false);
+            setHighlightApiKey(null);
+          }}
+          highlightApiKey={highlightApiKey}
+        />
 
         {/* Model Conflict Alert */}
         {modelConflict && (
@@ -697,7 +781,42 @@ export default function BattlePage() {
           />
         </div>
       </div>
-    </main>
+
+      {/* API Key Modal */}
+      {
+        apiKeyModal.keyType && (
+          <APIKeyModal
+            isOpen={apiKeyModal.isOpen}
+            onClose={() => {
+              setApiKeyModal({ isOpen: false, keyType: null });
+            }}
+            missingKey={apiKeyModal.keyType}
+            onGoToSettings={() => {
+              // Map ApiKeyType to HighlightApiKey
+              const keyTypeMap: Record<ApiKeyType, HighlightApiKey> = {
+                gemini: 'gemini',
+                openai: 'openai',
+              };
+              setHighlightApiKey(keyTypeMap[apiKeyModal.keyType!]);
+              setShowSettings(true);
+            }}
+          />
+        )
+      }
+
+      {/* PIN Unlock Modal */}
+      <PinUnlockModal
+        isOpen={showPinUnlock}
+        onUnlock={async (pin) => {
+          const success = await unlockApiKeys(pin);
+          if (success) {
+            setShowPinUnlock(false);
+          }
+          return success;
+        }}
+        onCancel={() => setShowPinUnlock(false)}
+      />
+    </main >
   );
 }
 

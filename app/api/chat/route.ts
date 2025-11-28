@@ -1,5 +1,15 @@
-import { google } from '@ai-sdk/google';
-import { openai } from '@ai-sdk/openai';
+/**
+ * Chat API Route
+ * 
+ * SECURITY NOTICE:
+ * - API keys are received from the client and used only for the current request
+ * - Keys are NEVER logged, persisted, or stored in any way on the server
+ * - Keys exist only in memory for the duration of the request
+ * - This is a same-origin server route - keys are sent over HTTPS to your own server
+ */
+
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 import { z } from 'zod';
 import { DEFAULT_MODEL, getModelInfo } from '@/utils/modelStorage';
@@ -96,16 +106,16 @@ NEVER just call a tool and stop. ALWAYS follow up with a complete text response.
 // Helper function to format tool results as readable text when model doesn't generate response
 function formatToolResultAsText(toolName: string, result: any): string {
     if (!result) return 'Unable to fetch data.';
-    
+
     // Handle error responses
     if (result.error) {
         return result.error;
     }
-    
+
     // Handle single stock quote (always includes YTD data now)
     if (toolName === 'get_stock_quote') {
         const q = result;
-        
+
         // Normalize all numeric values
         const price = Number(q.price) || 0;
         const changePercent = Number(q.changePercent) || 0;
@@ -113,13 +123,13 @@ function formatToolResultAsText(toolName: string, result: any): string {
         const ytdChangePercent = Number(q.ytdChangePercent) || 0;
         const ytdChangeAmount = Number(q.ytdChangeAmount) || 0;
         const spyYtdChangePercent = Number(q.spyYtdChangePercent) || 0;
-        
+
         // Helper to format with sign
         const formatWithSign = (val: number) => (val >= 0 ? '+' : '') + val.toFixed(2);
-        
+
         // Generate stock card JSON
         const stockCard = `<<STOCK_CARD>>{"ticker":"${q.ticker}","name":"${q.name}","price":${price},"changePercent":${changePercent},"changeAmount":${changeAmount},"ytdChangePercent":${ytdChangePercent},"ytdChangeAmount":${ytdChangeAmount},"spyYtdChangePercent":${spyYtdChangePercent}}<<END_STOCK_CARD>>\n\n`;
-        
+
         // Build response
         let response = stockCard;
         response += `**${q.name} (${q.ticker})**\n\n`;
@@ -128,17 +138,17 @@ function formatToolResultAsText(toolName: string, result: any): string {
         response += `📊 Change: ${formatWithSign(changeAmount).replace(/^([+-])/, '$1$')} (${formatWithSign(changePercent)}%)\n\n`;
         response += `**Year-to-Date (YTD) Performance:**\n`;
         response += `📈 YTD Change: ${formatWithSign(ytdChangeAmount).replace(/^([+-])/, '$1$')} (${formatWithSign(ytdChangePercent)}%)\n`;
-        
+
         if (spyYtdChangePercent !== 0) {
             const outperformance = ytdChangePercent - spyYtdChangePercent;
             response += `📉 S&P 500 (SPY) YTD: ${formatWithSign(spyYtdChangePercent)}%\n`;
             response += `⚡ vs SPY: ${formatWithSign(outperformance)}% (${outperformance >= 0 ? 'outperforming' : 'underperforming'})\n`;
         }
-        
+
         response += `\n*Market: ${q.exchange || 'N/A'} | Currency: ${q.currency || 'USD'}*`;
         return response;
     }
-    
+
     // Handle multiple quotes (now includes YTD data)
     if (toolName === 'get_multiple_quotes' && Array.isArray(result)) {
         let response = '';
@@ -146,25 +156,25 @@ function formatToolResultAsText(toolName: string, result: any): string {
             response += `<<STOCK_CARD>>{"ticker":"${q.ticker}","name":"${q.name}","price":${q.price},"changePercent":${q.changePercent || 0},"changeAmount":${q.change || 0},"ytdChangePercent":${q.ytdChangePercent || 0},"ytdChangeAmount":${q.ytdChangeAmount || 0},"spyYtdChangePercent":${q.spyYtdChangePercent || 0}}<<END_STOCK_CARD>>\n`;
         }
         response += '\n**Stock Comparison:**\n\n';
-        
+
         // Get SPY YTD for reference (from first result that has it)
         const spyYtd = result.find(q => q.spyYtdChangePercent !== undefined)?.spyYtdChangePercent;
-        
+
         for (const q of result) {
             const changeSign = (q.change || 0) >= 0 ? '+' : '';
             const ytdSign = (q.ytdChangePercent || 0) >= 0 ? '+' : '';
             response += `**${q.ticker}** (${q.name})\n`;
             response += `  💰 Price: $${q.price.toFixed(2)} | Today: ${changeSign}${(q.changePercent || 0).toFixed(2)}% | YTD: ${ytdSign}${(q.ytdChangePercent || 0).toFixed(2)}%\n\n`;
         }
-        
+
         if (spyYtd !== undefined) {
             const spySign = spyYtd >= 0 ? '+' : '';
             response += `\n*S&P 500 (SPY) YTD: ${spySign}${spyYtd.toFixed(2)}%*`;
         }
-        
+
         return response;
     }
-    
+
     // Handle search results
     if (toolName === 'search_stocks' && Array.isArray(result)) {
         if (result.length === 0) {
@@ -176,19 +186,19 @@ function formatToolResultAsText(toolName: string, result: any): string {
         }
         return response;
     }
-    
+
     // Handle single weather result
     if (toolName === 'get_weather') {
         const w = result;
-        
+
         // Generate weather card JSON
         const weatherCard = `<<WEATHER_CARD>>{"location":"${w.location}","temperature":${w.temperature},"condition":"${w.condition}","humidity":${w.humidity || 'null'},"windSpeed":${w.windSpeed || 'null'},"visibility":${w.visibility || 'null'},"feelsLike":${w.feelsLike || 'null'},"high":${w.high || 'null'},"low":${w.low || 'null'},"uvIndex":${w.uvIndex || 'null'},"aqi":${w.aqi || 'null'}}<<END_WEATHER_CARD>>\n\n`;
-        
+
         // Build response
         let response = weatherCard;
         response += `**Weather in ${w.location}**\n\n`;
         response += `🌡️ **Current:** ${w.temperature}°F - ${w.condition}\n\n`;
-        
+
         if (w.high !== undefined && w.low !== undefined) {
             response += `📊 **High/Low:** ${w.high}°F / ${w.low}°F\n`;
         }
@@ -209,10 +219,10 @@ function formatToolResultAsText(toolName: string, result: any): string {
             const aqiLabel = w.aqi <= 50 ? 'Good' : w.aqi <= 100 ? 'Moderate' : w.aqi <= 150 ? 'Unhealthy for Sensitive' : 'Unhealthy';
             response += `🌬️ **AQI:** ${w.aqi} (${aqiLabel})\n`;
         }
-        
+
         return response;
     }
-    
+
     // Handle multiple weather results
     if (toolName === 'get_multiple_weather' && Array.isArray(result)) {
         let response = '';
@@ -220,7 +230,7 @@ function formatToolResultAsText(toolName: string, result: any): string {
             response += `<<WEATHER_CARD>>{"location":"${w.location}","temperature":${w.temperature},"condition":"${w.condition}","humidity":${w.humidity || 'null'},"windSpeed":${w.windSpeed || 'null'},"visibility":${w.visibility || 'null'},"feelsLike":${w.feelsLike || 'null'},"high":${w.high || 'null'},"low":${w.low || 'null'},"uvIndex":${w.uvIndex || 'null'},"aqi":${w.aqi || 'null'}}<<END_WEATHER_CARD>>\n`;
         }
         response += '\n**Weather Comparison:**\n\n';
-        
+
         for (const w of result) {
             response += `**${w.location}**\n`;
             response += `  🌡️ ${w.temperature}°F - ${w.condition}`;
@@ -229,10 +239,10 @@ function formatToolResultAsText(toolName: string, result: any): string {
             }
             response += '\n\n';
         }
-        
+
         return response;
     }
-    
+
     // Handle location search results
     if (toolName === 'search_locations' && Array.isArray(result)) {
         if (result.length === 0) {
@@ -244,7 +254,7 @@ function formatToolResultAsText(toolName: string, result: any): string {
         }
         return response;
     }
-    
+
     // Fallback: return JSON
     return '```json\n' + JSON.stringify(result, null, 2) + '\n```';
 }
@@ -370,7 +380,7 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
     try {
-        const { messages, model } = await req.json();
+        const { messages, model, apiKey, provider: clientProvider } = await req.json();
 
         // Get model info to determine provider
         const modelInfo = getModelInfo(model || DEFAULT_MODEL);
@@ -384,28 +394,33 @@ export async function POST(req: Request) {
             );
         }
 
-        // Check for required API keys based on provider
-        if (modelInfo.provider === 'google' && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-            console.error('Missing GOOGLE_GENERATIVE_AI_API_KEY');
+        // Use provider from client or determine from model
+        const provider = clientProvider || modelInfo.provider;
+
+        // Check for required API key based on provider
+        // Priority: client-provided key > environment variable
+        const envKey = provider === 'google'
+            ? process.env.GOOGLE_GENERATIVE_AI_API_KEY
+            : process.env.OPENAI_API_KEY;
+
+        const effectiveApiKey = apiKey || envKey || '';
+
+        if (!effectiveApiKey) {
+            const keyType = provider === 'google' ? 'gemini' : 'openai';
             return new Response(
-                JSON.stringify({ error: 'Missing Google API Key' }),
+                JSON.stringify({
+                    error: `Missing ${provider === 'google' ? 'Google' : 'OpenAI'} API Key`,
+                    errorType: 'MISSING_API_KEY',
+                    keyType
+                }),
                 {
-                    status: 500,
+                    status: 401,
                     headers: { 'Content-Type': 'application/json' },
                 }
             );
         }
 
-        if (modelInfo.provider === 'openai' && !process.env.OPENAI_API_KEY) {
-            console.error('Missing OPENAI_API_KEY');
-            return new Response(
-                JSON.stringify({ error: 'Missing OpenAI API Key' }),
-                {
-                    status: 500,
-                    headers: { 'Content-Type': 'application/json' },
-                }
-            );
-        }
+
 
         // Validate and transform messages to AI SDK format
         if (!Array.isArray(messages)) {
@@ -466,8 +481,10 @@ export async function POST(req: Request) {
         // Select the appropriate provider model based on modelInfo
         let aiModel;
         if (modelInfo.provider === 'google') {
+            const google = createGoogleGenerativeAI({ apiKey: effectiveApiKey });
             aiModel = google(selectedModel);
         } else if (modelInfo.provider === 'openai') {
+            const openai = createOpenAI({ apiKey: effectiveApiKey });
             aiModel = openai(selectedModel);
         } else {
             return new Response(
@@ -500,11 +517,11 @@ export async function POST(req: Request) {
                     let hasGeneratedText = false;
                     let lastToolResult: any = null;
                     let lastToolName: string = '';
-                    
+
                     // Use fullStream to capture all text from all steps (including after tool calls)
                     for await (const part of result.fullStream) {
                         if (isClosed) break;
-                        
+
                         // Stream text-delta events to the client
                         if (part.type === 'text-delta') {
                             const textContent = (part as any).text || (part as any).textDelta || '';
