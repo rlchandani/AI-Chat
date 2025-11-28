@@ -21,7 +21,7 @@ export interface BattleHistory {
  */
 export function getCurrentBattleConversationId(): string {
     if (typeof window === 'undefined') return '';
-    
+
     let conversationId = localStorage.getItem(BATTLE_CONVERSATION_ID_KEY);
     if (!conversationId) {
         conversationId = `battle-${Date.now()}`;
@@ -50,14 +50,14 @@ export function saveBattleHistory(
     conversationId?: string
 ): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const id = conversationId || getCurrentBattleConversationId();
-        
+
         if (leftMessages.length === 0 && rightMessages.length === 0) {
             return;
         }
-        
+
         const existing = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${id}`);
         let existingHistory: BattleHistory | null = null;
         if (existing) {
@@ -67,12 +67,12 @@ export function saveBattleHistory(
                 // Ignore parse errors
             }
         }
-        
+
         const generateAutoTitle = (lMessages: Message[], rMessages: Message[]): string | null => {
             const allMessages = [...lMessages, ...rMessages];
             const firstUserMessage = allMessages.find(m => m.role === 'user');
             if (!firstUserMessage) return null;
-            
+
             let title = firstUserMessage.content.slice(0, 50).trim();
             if (firstUserMessage.content.length > 50) {
                 title += '...';
@@ -82,30 +82,30 @@ export function saveBattleHistory(
 
         const autoTitle = generateAutoTitle(leftMessages, rightMessages);
         const existingTitle = existingHistory?.title;
-        
-        const isManuallySet = existingTitle && existingTitle !== autoTitle && 
-                              existingTitle !== 'New Battle';
-        
+
+        const isManuallySet = existingTitle && existingTitle !== autoTitle &&
+            existingTitle !== 'New Battle';
+
         const existingLeftCount = existingHistory?.leftMessages?.length || 0;
         const existingRightCount = existingHistory?.rightMessages?.length || 0;
         const newLeftCount = leftMessages.length;
         const newRightCount = rightMessages.length;
         const hasNewMessages = (newLeftCount > existingLeftCount) || (newRightCount > existingRightCount);
-        
+
         let messagesChanged = hasNewMessages;
         if (!hasNewMessages && existingHistory) {
             const leftChanged = JSON.stringify(existingHistory.leftMessages || []) !== JSON.stringify(leftMessages);
             const rightChanged = JSON.stringify(existingHistory.rightMessages || []) !== JSON.stringify(rightMessages);
             messagesChanged = leftChanged || rightChanged;
         }
-        
+
         const finalLeftModel = existingHistory?.leftModel || leftModel;
         const finalRightModel = existingHistory?.rightModel || rightModel;
-        
-        const lastUpdated = messagesChanged 
-            ? Date.now() 
+
+        const lastUpdated = messagesChanged
+            ? Date.now()
             : (existingHistory?.lastUpdated || Date.now());
-        
+
         const history: BattleHistory = {
             leftMessages,
             rightMessages,
@@ -118,15 +118,15 @@ export function saveBattleHistory(
             leftUsageStats: existingHistory?.leftUsageStats,
             rightUsageStats: existingHistory?.rightUsageStats,
         };
-        
+
         localStorage.setItem(`${BATTLE_STORAGE_KEY}-${id}`, JSON.stringify(history));
-        
+
         const conversationsList = getAllBattleConversationIds();
         if (!conversationsList.includes(id)) {
             conversationsList.push(id);
             localStorage.setItem(`${BATTLE_STORAGE_KEY}-list`, JSON.stringify(conversationsList));
         }
-        
+
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('battleConversationUpdated'));
         }
@@ -140,13 +140,13 @@ export function saveBattleHistory(
 
 export function loadBattleHistory(conversationId?: string): { leftMessages: Message[]; rightMessages: Message[]; leftModel?: string; rightModel?: string } {
     if (typeof window === 'undefined') return { leftMessages: [], rightMessages: [] };
-    
+
     try {
         const id = conversationId || getCurrentBattleConversationId();
         const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${id}`);
-        
+
         if (!stored) return { leftMessages: [], rightMessages: [] };
-        
+
         try {
             const history: BattleHistory = JSON.parse(stored);
             return {
@@ -170,7 +170,7 @@ export function loadBattleHistory(conversationId?: string): { leftMessages: Mess
 
 export function getAllBattleConversationIds(): string[] {
     if (typeof window === 'undefined') return [];
-    
+
     try {
         const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-list`);
         return stored ? JSON.parse(stored) : [];
@@ -182,9 +182,9 @@ export function getAllBattleConversationIds(): string[] {
 
 export function findEmptyBattleConversation(): string | null {
     if (typeof window === 'undefined') return null;
-    
+
     const conversations = getAllBattleConversations();
-    
+
     for (const conv of conversations) {
         if (conv.messageCount === 0) {
             const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${conv.id}`);
@@ -207,7 +207,7 @@ export function findEmptyBattleConversation(): string | null {
             }
         }
     }
-    
+
     return null;
 }
 
@@ -229,20 +229,20 @@ export function createNewBattleConversation({ reuseEmpty = true }: { reuseEmpty?
 
 export function getBattleConversationMetadata(conversationId: string): { title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
     if (typeof window === 'undefined') return null;
-    
+
     try {
         const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
         if (!stored) return null;
-        
+
         try {
             const history: BattleHistory = JSON.parse(stored);
-            
+
             const generateAutoTitle = (leftMessages: Message[], rightMessages: Message[]): string | null => {
                 const allMessages = [...leftMessages, ...rightMessages];
                 if (allMessages.length === 0) return null;
                 const firstUserMessage = allMessages.find(m => m.role === 'user');
                 if (!firstUserMessage) return null;
-                
+
                 let title = firstUserMessage.content.slice(0, 50).trim();
                 if (firstUserMessage.content.length > 50) {
                     title += '...';
@@ -252,13 +252,13 @@ export function getBattleConversationMetadata(conversationId: string): { title: 
 
             const autoTitle = generateAutoTitle(history.leftMessages || [], history.rightMessages || []);
             const storedTitle = history.title;
-            
-            const isManuallySet = storedTitle && storedTitle !== autoTitle && 
-                                  storedTitle !== 'New Battle';
-            
+
+            const isManuallySet = storedTitle && storedTitle !== autoTitle &&
+                storedTitle !== 'New Battle';
+
             const title = isManuallySet ? storedTitle : (autoTitle || storedTitle || 'New Battle');
             const messageCount = (history.leftMessages?.length || 0) + (history.rightMessages?.length || 0);
-            
+
             return {
                 title,
                 lastUpdated: history.lastUpdated,
@@ -267,12 +267,12 @@ export function getBattleConversationMetadata(conversationId: string): { title: 
             };
         } catch (e) {
             const history: ChatHistory = JSON.parse(stored);
-            
+
             const generateAutoTitle = (messages: Message[]): string | null => {
                 if (messages.length === 0) return null;
                 const firstUserMessage = messages.find(m => m.role === 'user');
                 if (!firstUserMessage) return null;
-                
+
                 let title = firstUserMessage.content.slice(0, 50).trim();
                 if (firstUserMessage.content.length > 50) {
                     title += '...';
@@ -282,13 +282,13 @@ export function getBattleConversationMetadata(conversationId: string): { title: 
 
             const autoTitle = generateAutoTitle(history.messages);
             const storedTitle = history.title;
-            
-            const isManuallySet = storedTitle && storedTitle !== autoTitle && 
-                                  storedTitle !== 'New Battle';
-            
+
+            const isManuallySet = storedTitle && storedTitle !== autoTitle &&
+                storedTitle !== 'New Battle';
+
             const title = isManuallySet ? storedTitle : (autoTitle || storedTitle || 'New Battle');
             const messageCount = history.messages.length;
-            
+
             return {
                 title,
                 lastUpdated: history.lastUpdated,
@@ -304,10 +304,10 @@ export function getBattleConversationMetadata(conversationId: string): { title: 
 
 export function getUnsavedBattleConversationMetadata(conversationId: string): { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
     if (typeof window === 'undefined') return null;
-    
+
     const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
     if (stored) return null;
-    
+
     return {
         id: conversationId,
         title: 'New Battle',
@@ -319,7 +319,7 @@ export function getUnsavedBattleConversationMetadata(conversationId: string): { 
 
 export function getAllBattleConversations(includeUnsaved?: string[]): Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> {
     if (typeof window === 'undefined') return [];
-    
+
     const conversationIds = getAllBattleConversationIds();
     const savedConvs = conversationIds
         .map(id => {
@@ -328,7 +328,7 @@ export function getAllBattleConversations(includeUnsaved?: string[]): Array<{ id
             return { id, ...metadata };
         })
         .filter((conv): conv is { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } => conv !== null);
-    
+
     const unsavedConvs: Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> = [];
     if (includeUnsaved) {
         for (const id of includeUnsaved) {
@@ -340,30 +340,30 @@ export function getAllBattleConversations(includeUnsaved?: string[]): Array<{ id
             }
         }
     }
-    
+
     return [...savedConvs, ...unsavedConvs].sort((a, b) => b.lastUpdated - a.lastUpdated);
 }
 
 export function loadBattleUsageStats(conversationId?: string): { left?: UsageStats; right?: UsageStats } | null {
     if (typeof window === 'undefined') return null;
-    
+
     try {
         const id = conversationId || getCurrentBattleConversationId();
         const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${id}`);
-        
+
         if (!stored) return null;
-        
+
         try {
             const history: BattleHistory = JSON.parse(stored);
             return {
-                left: history.leftUsageStats || null,
-                right: history.rightUsageStats || null,
+                left: history.leftUsageStats || undefined,
+                right: history.rightUsageStats || undefined,
             };
         } catch (e) {
             const history: ChatHistory = JSON.parse(stored);
             return {
-                left: history.usageStats || null,
-                right: null,
+                left: history.usageStats || undefined,
+                right: undefined,
             };
         }
     } catch (error) {
@@ -380,18 +380,18 @@ export function saveBattleUsageStats(
     chatSide: 'left' | 'right'
 ): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
-        
+
         // Don't create new entries for usage stats - only update existing conversations
         // This prevents orphaned storage entries
         if (!stored) {
             return;
         }
-        
+
         let history: BattleHistory;
-        
+
         try {
             history = JSON.parse(stored);
             if (!('leftMessages' in history)) {
@@ -413,17 +413,17 @@ export function saveBattleUsageStats(
             // If we can't parse the existing data, don't create orphaned entries
             return;
         }
-        
+
         const existingStats = (chatSide === 'left' ? history.leftUsageStats : history.rightUsageStats) || {
             promptTokens: 0,
             completionTokens: 0,
             totalTokens: 0,
             totalCost: 0,
         };
-        
+
         const incrementalPromptTokens = Math.max(0, newUsage.promptTokens - existingStats.promptTokens);
         const incrementalCompletionTokens = Math.max(0, newUsage.completionTokens - existingStats.completionTokens);
-        
+
         let incrementalCost = 0;
         if (incrementalPromptTokens > 0 || incrementalCompletionTokens > 0) {
             const { calculateCost } = require('@/utils/modelStorage');
@@ -433,7 +433,7 @@ export function saveBattleUsageStats(
                 modelId
             );
         }
-        
+
         const updatedStats: UsageStats = {
             promptTokens: newUsage.promptTokens,
             completionTokens: newUsage.completionTokens,
@@ -441,7 +441,7 @@ export function saveBattleUsageStats(
             totalCost: existingStats.totalCost + incrementalCost,
             lastModel: modelId,
         };
-        
+
         if (chatSide === 'left') {
             history.leftUsageStats = updatedStats;
             history.leftModel = history.leftModel || modelId;
@@ -449,9 +449,9 @@ export function saveBattleUsageStats(
             history.rightUsageStats = updatedStats;
             history.rightModel = history.rightModel || modelId;
         }
-        
+
         localStorage.setItem(`${BATTLE_STORAGE_KEY}-${conversationId}`, JSON.stringify(history));
-        
+
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('battleUsageUpdated'));
         }
@@ -462,11 +462,11 @@ export function saveBattleUsageStats(
 
 export function renameBattleConversation(conversationId: string, newTitle: string): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
         let history: BattleHistory;
-        
+
         if (stored) {
             try {
                 history = JSON.parse(stored);
@@ -508,18 +508,18 @@ export function renameBattleConversation(conversationId: string, newTitle: strin
                 title: newTitle.trim() || 'New Battle',
                 createdAt: Date.now(),
             };
-            
+
             const conversationsList = getAllBattleConversationIds();
             if (!conversationsList.includes(conversationId)) {
                 conversationsList.push(conversationId);
                 localStorage.setItem(`${BATTLE_STORAGE_KEY}-list`, JSON.stringify(conversationsList));
             }
         }
-        
+
         history.title = newTitle.trim() || 'New Battle';
-        
+
         localStorage.setItem(`${BATTLE_STORAGE_KEY}-${conversationId}`, JSON.stringify(history));
-        
+
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('battleConversationUpdated'));
         }
@@ -530,22 +530,22 @@ export function renameBattleConversation(conversationId: string, newTitle: strin
 
 export function deleteBattleConversation(conversationId: string): void {
     if (typeof window === 'undefined') return;
-    
+
     // Remove the conversation data
     localStorage.removeItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
-    
+
     // Remove from the list
     const conversationsList = getAllBattleConversationIds();
     const filtered = conversationsList.filter(id => id !== conversationId);
     localStorage.setItem(`${BATTLE_STORAGE_KEY}-list`, JSON.stringify(filtered));
-    
+
     // Also clean up any orphaned battle entries not in the list
     cleanupOrphanedBattleEntries();
-    
+
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('battleConversationUpdated'));
     }
-    
+
     // Note: We don't auto-create a new conversation here anymore.
     // The UI (sidebar) is responsible for handling what happens after delete.
 }
@@ -555,11 +555,11 @@ export function deleteBattleConversation(conversationId: string): void {
  */
 export function cleanupOrphanedBattleEntries(): void {
     if (typeof window === 'undefined') return;
-    
+
     try {
         const validIds = getAllBattleConversationIds();
         const currentId = getCurrentBattleConversationId();
-        
+
         // Collect all localStorage keys that are battle history entries
         const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
@@ -573,7 +573,7 @@ export function cleanupOrphanedBattleEntries(): void {
                 }
             }
         }
-        
+
         // Remove orphaned entries
         keysToRemove.forEach(key => {
             localStorage.removeItem(key);
@@ -585,10 +585,10 @@ export function cleanupOrphanedBattleEntries(): void {
 
 export function clearBattleHistory(conversationId?: string): void {
     if (typeof window === 'undefined') return;
-    
+
     const id = conversationId || getCurrentBattleConversationId();
     localStorage.removeItem(`${BATTLE_STORAGE_KEY}-${id}`);
-    
+
     const conversationsList = getAllBattleConversationIds();
     const filtered = conversationsList.filter(cid => cid !== id);
     localStorage.setItem(`${BATTLE_STORAGE_KEY}-list`, JSON.stringify(filtered));
@@ -599,14 +599,14 @@ export function clearBattleHistory(conversationId?: string): void {
  */
 export function clearAllBattleHistory(): void {
     if (typeof window === 'undefined') return;
-    
+
     const conversationsList = getAllBattleConversationIds();
     conversationsList.forEach(id => {
         localStorage.removeItem(`${BATTLE_STORAGE_KEY}-${id}`);
     });
     localStorage.removeItem(`${BATTLE_STORAGE_KEY}-list`);
     localStorage.removeItem(BATTLE_CONVERSATION_ID_KEY);
-    
+
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('battleConversationUpdated'));
     }

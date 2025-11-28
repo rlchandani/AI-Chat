@@ -5,7 +5,18 @@ export const maxDuration = 30;
 // Yahoo Finance API (Unofficial) - Direct API calls for batch stock data
 // Fetches multiple stocks in parallel
 
-async function fetchYahooQuote(ticker: string) {
+// Interface for standardized stock quote data
+interface StockQuote {
+  ticker: string;
+  price: number;
+  previousClose: number;
+  change: number;
+  changePercent: number;
+  name: string;
+  error?: string;
+}
+
+async function fetchYahooQuote(ticker: string): Promise<StockQuote> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
   const response = await fetch(url, {
     headers: {
@@ -124,7 +135,7 @@ export async function GET(req: NextRequest) {
     const quotePromises = tickers.map(ticker =>
       fetchYahooQuote(ticker).catch(err => {
         console.error(`[Batch Stock API] Error fetching ${ticker}:`, err);
-        return {
+        const errorQuote: StockQuote = {
           ticker,
           price: 0,
           previousClose: 0,
@@ -133,6 +144,7 @@ export async function GET(req: NextRequest) {
           name: ticker,
           error: err.message,
         };
+        return errorQuote;
       })
     );
 

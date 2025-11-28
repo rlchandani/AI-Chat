@@ -42,10 +42,10 @@ export function ShareConversation({ conversationId }: ShareConversationProps) {
 
     const handleShare = async () => {
         const link = getShareableLink();
-        
+
         try {
             // Try using the Web Share API if available (mobile)
-            if (navigator.share) {
+            if (typeof navigator.share === 'function') {
                 await navigator.share({
                     url: link,
                 });
@@ -85,7 +85,7 @@ export function ShareConversation({ conversationId }: ShareConversationProps) {
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => {
-                    if (navigator.share) {
+                    if (typeof navigator.share === 'function') {
                         handleShare();
                     } else {
                         setShowDropdown(!showDropdown);
@@ -119,7 +119,7 @@ export function ShareConversation({ conversationId }: ShareConversationProps) {
                     )}
                 </AnimatePresence>
             </button>
-            
+
             {/* Dropdown menu with copy option */}
             <AnimatePresence>
                 {showDropdown && (

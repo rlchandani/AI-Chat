@@ -35,7 +35,7 @@ export function LocationAutocomplete({
   const [serverError, setServerError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<NodeJS.Timeout>();
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Clear previous debounce
@@ -57,16 +57,16 @@ export function LocationAutocomplete({
       try {
         // Google Maps API key is configured server-side
         const url = `/api/weather/geocode?q=${encodeURIComponent(value)}`;
-        
+
         const response = await fetch(url);
-        
+
         if (!response.ok) {
           setServerError(true);
           setSuggestions([]);
           setShowSuggestions(false);
           return;
         }
-        
+
         const data = await response.json();
         setSuggestions(data.results || []);
         setShowSuggestions(true);
