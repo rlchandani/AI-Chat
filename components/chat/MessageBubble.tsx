@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, isValidElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -8,11 +8,15 @@ import clsx from 'clsx';
 import { getSetting } from '@/utils/settingsStorage';
 import { StockQuoteCard } from '@/components/chat/StockQuoteCard';
 import { WeatherCard } from '@/components/chat/WeatherCard';
+import { StockTableWidget } from '@/components/widgets/StockTableWidget';
+import { ToolInvocation } from '@/types/chat';
+import { StockUI } from '@/types/stock';
+import { WeatherData } from '@/types/weather';
 
 interface MessageBubbleProps {
     role: 'user' | 'assistant' | 'system' | 'data';
     content: string;
-    toolInvocations?: any[];
+    toolInvocations?: ToolInvocation[];
     timestamp?: number;
 }
 
@@ -35,7 +39,7 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
 
         // Listen for settings updates
         window.addEventListener('settingsUpdated', updateSettings);
-        
+
         return () => {
             window.removeEventListener('settingsUpdated', updateSettings);
         };
@@ -46,14 +50,14 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
         const checkDarkMode = () => {
             setIsDarkMode(document.documentElement.classList.contains('dark'));
         };
-        
+
         checkDarkMode();
         const observer = new MutationObserver(checkDarkMode);
         observer.observe(document.documentElement, {
             attributes: true,
             attributeFilter: ['class'],
         });
-        
+
         return () => observer.disconnect();
     }, []);
 
@@ -69,38 +73,41 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
     const cleanContent = content.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
 
     // Extract stock cards if present
-    interface StockCardData {
-        ticker: string;
-        name: string;
-        price: number;
-        changePercent: number;
-        changeAmount?: number;
-        ytdChangePercent: number;
-        ytdChangeAmount?: number;
-        spyYtdChangePercent?: number;
-    }
+    // Extract stock cards if present
+    // Using StockUI from types
 
     // Helper to safely parse numeric values from JSON
-    const parseNum = (val: any): number => (typeof val === 'number' ? val : parseFloat(val) || 0);
-    const parseNumOrUndefined = (val: any): number | undefined => 
+    const parseNum = (val: unknown): number => {
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') return parseFloat(val) || 0;
+        return 0;
+    };
+    const parseNumOrUndefined = (val: unknown): number | undefined =>
         val === undefined || val === null ? undefined : parseNum(val);
 
     const stockCardRegex = /<<STOCK_CARD>>([\s\S]*?)<<END_STOCK_CARD>>/g;
-    const stockCards: StockCardData[] = [];
+    const stockCards: StockUI[] = [];
     let contentWithoutStockCards = cleanContent;
     let stockMatch;
     while ((stockMatch = stockCardRegex.exec(cleanContent)) !== null) {
         try {
             const data = JSON.parse(stockMatch[1]);
+            const changeAmount = parseNum(data.changeAmount);
             stockCards.push({
                 ticker: data.ticker || data.symbol || '',
                 name: data.name || data.companyName || '',
                 price: parseNum(data.price),
+                change: changeAmount, // Map changeAmount to change for UI consistency
                 changePercent: parseNum(data.changePercent),
-                changeAmount: parseNum(data.changeAmount),
+                changeAmount: changeAmount,
                 ytdChangePercent: parseNum(data.ytdChangePercent),
                 ytdChangeAmount: parseNum(data.ytdChangeAmount),
                 spyYtdChangePercent: parseNumOrUndefined(data.spyYtdChangePercent),
+                // Base properties from StockQuote
+                previousClose: 0, // Not available in card JSON, default to 0
+                currency: 'USD',
+                marketState: 'UNKNOWN',
+                exchange: 'UNKNOWN'
             });
             contentWithoutStockCards = contentWithoutStockCards.replace(stockMatch[0], '').trim();
         } catch (error) {
@@ -108,23 +115,57 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
         }
     }
 
-    // Extract weather cards if present
-    interface WeatherCardData {
-        location: string;
-        temperature: number;
-        condition: string;
-        humidity?: number;
-        windSpeed?: number;
-        visibility?: number;
-        feelsLike?: number;
-        high?: number;
-        low?: number;
-        uvIndex?: number;
-        aqi?: number;
+    // Extract stock table cards if present
+    interface RawStockData {
+        ticker?: string;
+        symbol?: string;
+        name?: string;
+        companyName?: string;
+        price?: number | string;
+        changeAmount?: number | string;
+        changePercent?: number | string;
+        ytdChangePercent?: number | string;
+        ytdChangeAmount?: number | string;
+        spyYtdChangePercent?: number | string;
     }
 
+    const stockTableCardRegex = /<<STOCK_TABLE_CARD>>([\s\S]*?)<<END_STOCK_TABLE_CARD>>/g;
+    const stockTableCards: { stocks: StockUI[] }[] = [];
+    let stockTableMatch;
+    while ((stockTableMatch = stockTableCardRegex.exec(contentWithoutStockCards)) !== null) {
+        try {
+            const data = JSON.parse(stockTableMatch[1]);
+            if (data.stocks && Array.isArray(data.stocks)) {
+                stockTableCards.push({
+                    stocks: data.stocks.map((s: RawStockData) => {
+                        const changeAmount = parseNum(s.changeAmount);
+                        return {
+                            ticker: s.ticker || s.symbol || '',
+                            name: s.name || s.companyName || '',
+                            price: parseNum(s.price),
+                            change: changeAmount,
+                            changePercent: parseNum(s.changePercent),
+                            changeAmount: changeAmount,
+                            ytdChangePercent: parseNum(s.ytdChangePercent),
+                            ytdChangeAmount: parseNum(s.ytdChangeAmount),
+                            spyYtdChangePercent: parseNumOrUndefined(s.spyYtdChangePercent),
+                            previousClose: 0,
+                            currency: 'USD',
+                            marketState: 'UNKNOWN',
+                            exchange: 'UNKNOWN'
+                        };
+                    })
+                });
+            }
+            contentWithoutStockCards = contentWithoutStockCards.replace(stockTableMatch[0], '').trim();
+        } catch (error) {
+            console.warn('Failed to parse stock table card payload:', error);
+        }
+    }
+
+    // Extract weather cards if present
     const weatherCardRegex = /<<WEATHER_CARD>>([\s\S]*?)<<END_WEATHER_CARD>>/g;
-    const weatherCards: WeatherCardData[] = [];
+    const weatherCards: WeatherData[] = [];
     let contentWithoutWeatherCards = contentWithoutStockCards;
     let weatherMatch;
     while ((weatherMatch = weatherCardRegex.exec(contentWithoutStockCards)) !== null) {
@@ -234,6 +275,18 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                         />
                     ))}
 
+                {/* Stock Table Cards */}
+                {!isUser &&
+                    stockTableCards.map((card, idx) => (
+                        <div key={`stock-table-${idx}`} className="w-full h-64 mb-4">
+                            <StockTableWidget
+                                tickers={card.stocks.map(s => s.ticker).join(',')}
+                                initialData={card.stocks}
+                                isEditable={false}
+                            />
+                        </div>
+                    ))}
+
                 {/* Weather Cards */}
                 {!isUser &&
                     weatherCards.map((card, idx) => (
@@ -252,10 +305,10 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                             aqi={card.aqi}
                             autoFetch={false}
                         />
-                ))}
+                    ))}
 
                 {/* Main Text Content */}
-                {(contentWithoutWeatherCards || (!thinkingContent && !toolInvocations && stockCards.length === 0 && weatherCards.length === 0)) && (
+                {(contentWithoutWeatherCards || (!thinkingContent && !toolInvocations && stockCards.length === 0 && stockTableCards.length === 0 && weatherCards.length === 0)) && (
                     <div className={clsx(
                         'px-4 py-3 rounded-2xl shadow-sm',
                         isUser
@@ -263,13 +316,13 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                             : 'bg-card border border-border text-card-foreground rounded-tl-sm'
                     )}>
                         {markdownRendering ? (
-                        <div className="prose dark:prose-invert prose-sm max-w-none break-words">
-                            <ReactMarkdown
-                                components={{
-                                        code({ node, inline, className, children, ...props }: any) {
+                            <div className="prose dark:prose-invert prose-sm max-w-none break-words">
+                                <ReactMarkdown
+                                    components={{
+                                        code({ inline, className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }) {
                                             const match = /language-(\w+)/.exec(className || '');
                                             const language = match ? match[1] : '';
-                                            
+
                                             // Inline code (not in a code block)
                                             if (inline || !language) {
                                                 return (
@@ -278,12 +331,13 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                                                     </code>
                                                 );
                                             }
-                                            
+
                                             // Code block with syntax highlighting
                                             return (
                                                 <SyntaxHighlighter
                                                     language={language}
-                                                    style={isDarkMode ? oneDark : oneLight}
+                                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                    style={isDarkMode ? (oneDark as any) : (oneLight as any)}
                                                     customStyle={{
                                                         margin: '0.5rem 0',
                                                         padding: '1rem',
@@ -299,15 +353,15 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                                                 </SyntaxHighlighter>
                                             );
                                         },
-                                        pre: ({ children, ...props }: any) => {
+                                        pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => {
                                             // For code blocks, the SyntaxHighlighter handles the container
                                             // For plain pre tags, render normally
-                                            const child = children?.props;
+                                            const child = isValidElement(children) ? (children.props as { className?: string }) : undefined;
                                             if (child && child.className && /language-/.test(child.className)) {
                                                 // Code block - let the code component handle it
                                                 return <>{children}</>;
                                             }
-                                            
+
                                             // Plain pre tag
                                             return (
                                                 <pre className="overflow-auto w-full my-2 bg-black/10 dark:bg-black/30 p-2 rounded-lg" {...props}>
@@ -315,11 +369,11 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                                                 </pre>
                                             );
                                         },
-                                }}
-                            >
+                                    }}
+                                >
                                     {contentWithoutWeatherCards}
-                            </ReactMarkdown>
-                        </div>
+                                </ReactMarkdown>
+                            </div>
                         ) : (
                             <div className="text-sm whitespace-pre-wrap break-words">
                                 {contentWithoutWeatherCards}
@@ -336,6 +390,6 @@ export function MessageBubble({ role, content, toolInvocations, timestamp }: Mes
                     </div>
                 )}
             </div>
-        </motion.div>
+        </motion.div >
     );
 }

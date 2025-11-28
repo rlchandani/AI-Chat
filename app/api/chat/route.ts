@@ -23,6 +23,7 @@ import {
     getMultipleWeather,
     searchLocations,
 } from '@/mcp/weather-tools';
+import { StockQuoteWithYTD } from '@/types/stock';
 
 // System instructions for structured card output
 const STOCK_CARD_INSTRUCTIONS = `When you receive stock data from tools, format the response with a structured stock card.
@@ -37,6 +38,12 @@ Use this exact JSON envelope (valid JSON, one block per stock):
 - ytdChangeAmount: year-to-date $ change (if available)
 - spyYtdChangePercent: SPY (S&P 500 ETF) YTD % change for comparison (if available)
 Emit the stock card block first, then follow with your natural-language analysis.`;
+
+const STOCK_TABLE_CARD_INSTRUCTIONS = `When you receive multiple stock data points for comparison, format the response with a structured stock table card.
+Use this exact JSON envelope (valid JSON, containing an array of stocks):
+<<STOCK_TABLE_CARD>>{"stocks":[{"ticker":"AAPL","name":"Apple Inc.","price":191.45,"changePercent":1.23,"changeAmount":2.34,"ytdChangePercent":8.90,"ytdChangeAmount":14.22,"spyYtdChangePercent":15.30},{"ticker":"MSFT","name":"Microsoft","price":420.55,"changePercent":0.85,"changeAmount":3.50,"ytdChangePercent":12.40,"ytdChangeAmount":45.20,"spyYtdChangePercent":15.30}]}<<END_STOCK_TABLE_CARD>>
+- stocks: array of stock objects with the same fields as the single stock card
+Emit the stock table card block first, then follow with your natural-language analysis.`;
 
 const WEATHER_CARD_INSTRUCTIONS = `When you receive weather data from tools, format the response with a structured weather card.
 Use this exact JSON envelope (valid JSON, one block per location):
@@ -77,7 +84,7 @@ STOCK EXAMPLE CALLS:
 
 AFTER RECEIVING STOCK TOOL RESULTS:
 You MUST generate a text response that includes:
-1. The <<STOCK_CARD>> JSON block with ALL fields
+1. The <<STOCK_CARD>> JSON block (for single stock) OR <<STOCK_TABLE_CARD>> JSON block (for multiple stocks)
 2. A natural language summary of the stock data
 
 === WEATHER TOOLS ===
@@ -104,17 +111,19 @@ You MUST generate a text response that includes:
 NEVER just call a tool and stop. ALWAYS follow up with a complete text response.`;
 
 // Helper function to format tool results as readable text when model doesn't generate response
-function formatToolResultAsText(toolName: string, result: any): string {
+function formatToolResultAsText(toolName: string, result: unknown): string {
     if (!result) return 'Unable to fetch data.';
 
-    // Handle error responses
-    if (result.error) {
-        return result.error;
+    // Handle error responses generically first
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((result as any).error) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (result as any).error;
     }
 
     // Handle single stock quote (always includes YTD data now)
     if (toolName === 'get_stock_quote') {
-        const q = result;
+        const q = result as StockQuoteWithYTD;
 
         // Normalize all numeric values
         const price = Number(q.price) || 0;
@@ -151,16 +160,27 @@ function formatToolResultAsText(toolName: string, result: any): string {
 
     // Handle multiple quotes (now includes YTD data)
     if (toolName === 'get_multiple_quotes' && Array.isArray(result)) {
-        let response = '';
-        for (const q of result) {
-            response += `<<STOCK_CARD>>{"ticker":"${q.ticker}","name":"${q.name}","price":${q.price},"changePercent":${q.changePercent || 0},"changeAmount":${q.change || 0},"ytdChangePercent":${q.ytdChangePercent || 0},"ytdChangeAmount":${q.ytdChangeAmount || 0},"spyYtdChangePercent":${q.spyYtdChangePercent || 0}}<<END_STOCK_CARD>>\n`;
-        }
-        response += '\n**Stock Comparison:**\n\n';
+        const r = result as StockQuoteWithYTD[];
+        // Generate stock table card JSON
+        const stocksData = r.map((q: StockQuoteWithYTD) => ({
+            ticker: q.ticker,
+            name: q.name,
+            price: q.price,
+            changePercent: q.changePercent || 0,
+            changeAmount: q.change || 0,
+            ytdChangePercent: q.ytdChangePercent || 0,
+            ytdChangeAmount: q.ytdChangeAmount || 0,
+            spyYtdChangePercent: q.spyYtdChangePercent || 0
+        }));
+
+        let response = `<<STOCK_TABLE_CARD>>${JSON.stringify({ stocks: stocksData })}<<END_STOCK_TABLE_CARD>>\n\n`;
+
+        response += '**Stock Comparison:**\n\n';
 
         // Get SPY YTD for reference (from first result that has it)
-        const spyYtd = result.find(q => q.spyYtdChangePercent !== undefined)?.spyYtdChangePercent;
+        const spyYtd = r.find(q => q.spyYtdChangePercent !== undefined)?.spyYtdChangePercent;
 
-        for (const q of result) {
+        for (const q of r) {
             const changeSign = (q.change || 0) >= 0 ? '+' : '';
             const ytdSign = (q.ytdChangePercent || 0) >= 0 ? '+' : '';
             response += `**${q.ticker}** (${q.name})\n`;
@@ -177,11 +197,13 @@ function formatToolResultAsText(toolName: string, result: any): string {
 
     // Handle search results
     if (toolName === 'search_stocks' && Array.isArray(result)) {
-        if (result.length === 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = result as any[]; // Use any[] here as StockSearchResult matches but we want to be safe with slice
+        if (r.length === 0) {
             return 'No stocks found matching your search.';
         }
         let response = 'Found the following stocks:\n\n';
-        for (const s of result.slice(0, 5)) {
+        for (const s of r.slice(0, 5)) {
             response += `- **${s.symbol}**: ${s.name} (${s.exchange})\n`;
         }
         return response;
@@ -189,7 +211,8 @@ function formatToolResultAsText(toolName: string, result: any): string {
 
     // Handle single weather result
     if (toolName === 'get_weather') {
-        const w = result;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const w = result as any; // Cast to any to avoid strict WeatherData check if result has extra props
 
         // Generate weather card JSON
         const weatherCard = `<<WEATHER_CARD>>{"location":"${w.location}","temperature":${w.temperature},"condition":"${w.condition}","humidity":${w.humidity || 'null'},"windSpeed":${w.windSpeed || 'null'},"visibility":${w.visibility || 'null'},"feelsLike":${w.feelsLike || 'null'},"high":${w.high || 'null'},"low":${w.low || 'null'},"uvIndex":${w.uvIndex || 'null'},"aqi":${w.aqi || 'null'}}<<END_WEATHER_CARD>>\n\n`;
@@ -225,13 +248,15 @@ function formatToolResultAsText(toolName: string, result: any): string {
 
     // Handle multiple weather results
     if (toolName === 'get_multiple_weather' && Array.isArray(result)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = result as any[];
         let response = '';
-        for (const w of result) {
+        for (const w of r) {
             response += `<<WEATHER_CARD>>{"location":"${w.location}","temperature":${w.temperature},"condition":"${w.condition}","humidity":${w.humidity || 'null'},"windSpeed":${w.windSpeed || 'null'},"visibility":${w.visibility || 'null'},"feelsLike":${w.feelsLike || 'null'},"high":${w.high || 'null'},"low":${w.low || 'null'},"uvIndex":${w.uvIndex || 'null'},"aqi":${w.aqi || 'null'}}<<END_WEATHER_CARD>>\n`;
         }
         response += '\n**Weather Comparison:**\n\n';
 
-        for (const w of result) {
+        for (const w of r) {
             response += `**${w.location}**\n`;
             response += `  🌡️ ${w.temperature}°F - ${w.condition}`;
             if (w.high !== undefined && w.low !== undefined) {
@@ -245,11 +270,13 @@ function formatToolResultAsText(toolName: string, result: any): string {
 
     // Handle location search results
     if (toolName === 'search_locations' && Array.isArray(result)) {
-        if (result.length === 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = result as any[];
+        if (r.length === 0) {
             return 'No locations found matching your search.';
         }
         let response = 'Found the following locations:\n\n';
-        for (const loc of result.slice(0, 5)) {
+        for (const loc of r.slice(0, 5)) {
             response += `- **${loc.name}**: ${loc.formattedAddress}\n`;
         }
         return response;
@@ -446,15 +473,24 @@ export async function POST(req: Request) {
         }
 
         // Transform messages: remove id, toolInvocations, and filter out invalid roles
+        interface IncomingMessage {
+            role: string;
+            content: string;
+            [key: string]: unknown;
+        }
+
         const formattedMessages = messages
-            .filter((msg: any) =>
-                msg &&
+            .filter((msg: unknown): msg is IncomingMessage =>
                 typeof msg === 'object' &&
-                ['user', 'assistant', 'system'].includes(msg.role) &&
-                typeof msg.content === 'string' &&
-                msg.content.trim().length > 0
+                msg !== null &&
+                'role' in msg &&
+                'content' in msg &&
+                typeof (msg as IncomingMessage).role === 'string' &&
+                ['user', 'assistant', 'system'].includes((msg as IncomingMessage).role) &&
+                typeof (msg as IncomingMessage).content === 'string' &&
+                (msg as IncomingMessage).content.trim().length > 0
             )
-            .map((msg: any) => ({
+            .map((msg: IncomingMessage) => ({
                 role: msg.role as 'user' | 'assistant' | 'system',
                 content: msg.content,
             }));
@@ -472,7 +508,7 @@ export async function POST(req: Request) {
         // Prepend system instructions (tools available for both Google and OpenAI)
         formattedMessages.unshift({
             role: 'system',
-            content: `${TOOL_USAGE_INSTRUCTIONS}\n\n${STOCK_CARD_INSTRUCTIONS}\n\n${WEATHER_CARD_INSTRUCTIONS}`,
+            content: `${TOOL_USAGE_INSTRUCTIONS}\n\n${STOCK_CARD_INSTRUCTIONS}\n\n${STOCK_TABLE_CARD_INSTRUCTIONS}\n\n${WEATHER_CARD_INSTRUCTIONS}`,
         });
 
         // Use the model from modelInfo (already validated)
@@ -515,7 +551,7 @@ export async function POST(req: Request) {
                 try {
                     // Track whether any text was generated and store tool results
                     let hasGeneratedText = false;
-                    let lastToolResult: any = null;
+                    let lastToolResult: unknown = null;
                     let lastToolName: string = '';
 
                     // Use fullStream to capture all text from all steps (including after tool calls)
@@ -524,7 +560,8 @@ export async function POST(req: Request) {
 
                         // Stream text-delta events to the client
                         if (part.type === 'text-delta') {
-                            const textContent = (part as any).text || (part as any).textDelta || '';
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            const textContent = (part as any).textDelta || (part as any).text || '';
                             if (textContent) {
                                 hasGeneratedText = true;
                                 controller.enqueue(encoder.encode(textContent));
@@ -532,9 +569,10 @@ export async function POST(req: Request) {
                         }
                         // Capture tool results for fallback formatting
                         else if (part.type === 'tool-result') {
-                            const toolPart = part as any;
-                            lastToolName = toolPart.toolName;
-                            lastToolResult = toolPart.result || toolPart.output;
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            lastToolName = (part as any).toolName;
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            lastToolResult = (part as any).result || (part as any).output;
                         }
                         // Handle stream finish - format tool results if model didn't generate text
                         else if (part.type === 'finish') {
@@ -548,6 +586,7 @@ export async function POST(req: Request) {
                     // After streaming completes, wait for usage info and send it
                     if (!isClosed) {
                         try {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             const usage = await result.usage as any;
                             if (usage && !isClosed) {
                                 // Send usage info as a special marker followed by JSON

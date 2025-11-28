@@ -17,16 +17,10 @@ interface StockQuoteCardProps {
     onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void }) => void;
 }
 
-interface StockData {
-    ticker: string;
-    name: string;
-    price: number;
-    changePercent: number;
-    changeAmount: number;
-    ytdChangePercent: number;
-    ytdChangeAmount: number;
-    spyYtdChangePercent?: number;
-}
+import { StockUI } from '@/types/stock';
+
+// Use centralized StockUI type but alias it to StockData for local compatibility
+type StockData = StockUI;
 
 export function StockQuoteCard({
     ticker: initialTicker,
@@ -46,11 +40,17 @@ export function StockQuoteCard({
                 ticker: initialTicker,
                 name: initialName || initialTicker,
                 price: initialPrice,
+                change: initialChangeAmount ?? 0, // Map changeAmount to change
                 changePercent: initialChangePercent ?? 0,
                 changeAmount: initialChangeAmount ?? 0,
                 ytdChangePercent: initialYtdChangePercent ?? 0,
                 ytdChangeAmount: initialYtdChangeAmount ?? 0,
                 spyYtdChangePercent: initialSpyYtdChangePercent,
+                // Default values for StockUI required properties
+                previousClose: 0,
+                currency: 'USD',
+                marketState: 'UNKNOWN',
+                exchange: 'UNKNOWN'
             }
             : null
     );
@@ -346,7 +346,7 @@ export function StockQuoteCard({
                 )}
 
                 <div className="text-[11px] uppercase tracking-wider text-muted-foreground text-right">
-                    Sourced from Yahoo Finance
+                    iRedlof Intelligence
                 </div>
             </div>
         </div>

@@ -4,23 +4,9 @@
  * Used by AI SDK tool integration in the chat API
  */
 
-export interface StockQuote {
-  ticker: string;
-  name: string;
-  price: number;
-  previousClose: number;
-  change: number;
-  changePercent: number;
-  currency: string;
-  marketState: string;
-  exchange: string;
-}
+import { StockQuote, StockQuoteWithYTD, StockSearchResult } from '@/types/stock';
 
-export interface StockQuoteWithYTD extends StockQuote {
-  ytdChangePercent: number;
-  ytdChangeAmount: number;
-  spyYtdChangePercent?: number;
-}
+export type { StockQuote, StockQuoteWithYTD, StockSearchResult };
 
 export interface HistoricalDataPoint {
   date: string;
@@ -216,7 +202,7 @@ interface YahooQuoteResult {
 }
 export async function searchStocks(
   query: string
-): Promise<Array<{ symbol: string; name: string; type: string; exchange: string }>> {
+): Promise<StockSearchResult[]> {
   const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
 
   const response = await fetch(url, {

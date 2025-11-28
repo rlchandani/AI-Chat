@@ -1,42 +1,125 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, TrendingUp, Edit2, Check, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2, TrendingUp, Check, X, Share2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import * as htmlToImage from 'html-to-image';
+import { StockUI } from '@/types/stock';
 
-interface StockData {
-  ticker: string;
-  name: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  ytdChangePercent: number;
-  ytdChangeAmount: number;
-  spyYtdChangePercent?: number;
-  vsSpyPercent?: number;
-  error?: string;
-}
+// Use centralized StockUI type but alias it to StockData for local compatibility if needed,
+// or just replace usages. Let's alias it for minimal diff.
+type StockData = StockUI;
 
 interface StockTableWidgetProps {
   tickers: string;
   onUpdate?: (tickers: string) => void;
   isEditable?: boolean;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void }) => void;
+  initialData?: StockData[];
 }
 
-export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable = false, onRefreshStateChange }: StockTableWidgetProps) {
+export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable = false, onRefreshStateChange, initialData }: StockTableWidgetProps) {
   const [tickers, setTickers] = useState(initialTickers || 'AAPL,MSFT,GOOGL');
   const [isEditing, setIsEditing] = useState(false);
-  const [stocks, setStocks] = useState<StockData[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Process initial data to ensure vsSpyPercent is calculated if missing
+  const processedInitialData = initialData?.map(stock => {
+    if (stock.vsSpyPercent === undefined && stock.spyYtdChangePercent !== undefined) {
+      return {
+        ...stock,
+        vsSpyPercent: stock.ytdChangePercent - stock.spyYtdChangePercent
+      };
+    }
+    return stock;
+  });
+
+  const [stocks, setStocks] = useState<StockData[]>(processedInitialData || []);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
   const hasFetchedRef = useRef(false);
-  
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Share card as image - Gold Standard implementation
+  const handleShare = useCallback(async () => {
+    if (!cardRef.current || isSharing) return;
+
+    setIsSharing(true);
+    try {
+      const node = cardRef.current;
+
+      // 1. Wait for fonts to be ready to prevent "glitchy" text (FOUT fix)
+      await document.fonts.ready;
+
+      // Detect if dark mode - use slate colors that match the card
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      const bgColor = isDarkMode ? '#1e293b' : '#f8fafc'; // slate-800 / slate-50
+
+      // Capture the card as PNG blob using html-to-image (Gold Standard config)
+      const blob = await htmlToImage.toBlob(node, {
+        pixelRatio: window.devicePixelRatio || 2, // Retina display support
+        backgroundColor: bgColor,                  // Prevent transparent artifacts
+        cacheBust: true,                          // CORS fix for external images
+        width: node.scrollWidth,                  // Layout stability
+        height: node.scrollHeight,
+        style: { transform: 'none', margin: '0' }, // Prevent layout shifts
+      });
+
+      if (!blob) {
+        throw new Error('Failed to create image');
+      }
+
+      // Generate unique filename with date and time (YYYY-MM-DD_HH-MM-SS)
+      const now = new Date();
+      const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+      const fileName = `stock-table-${timestamp}.png`;
+
+      // Try Web Share API first (works on mobile and some desktop browsers)
+      if (navigator.share && navigator.canShare) {
+        const file = new File([blob], fileName, { type: 'image/png' });
+        const shareData = {
+          title: 'Stock Table',
+          text: 'Check out this stock comparison from iRedlof',
+          files: [file],
+        };
+
+        if (navigator.canShare(shareData)) {
+          await navigator.share(shareData);
+          setShareSuccess(true);
+          setTimeout(() => setShareSuccess(false), 2000);
+          return;
+        }
+      }
+
+      // Fallback: Download the image
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setShareSuccess(true);
+      setTimeout(() => setShareSuccess(false), 2000);
+    } catch (err) {
+      // Silently ignore AbortError (user cancelled the share dialog)
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      console.error('Share error:', err);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [isSharing]);
+
   // Listen for edit events from widget header
   useEffect(() => {
-    const handleEdit = (e: CustomEvent) => {
+    const handleEdit = () => {
       if (isEditable) {
         setIsEditing(true);
       }
@@ -55,9 +138,9 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await fetch(`/api/stock/batch?tickers=${encodeURIComponent(tickerList)}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch stock data');
       }
@@ -74,12 +157,12 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
   };
 
   useEffect(() => {
-    if (initialTickers && !hasFetchedRef.current) {
+    if (initialTickers && !hasFetchedRef.current && !initialData) {
       hasFetchedRef.current = true; // Mark as fetched to prevent duplicate calls
       fetchStocks(initialTickers);
     }
-     
-  }, [initialTickers]);
+
+  }, [initialTickers, initialData]);
 
   const handleSave = () => {
     if (onUpdate) {
@@ -107,7 +190,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       }
 
       const response = await fetch(`/api/stock/batch?tickers=${encodeURIComponent(tickerList)}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch stock data');
       }
@@ -200,7 +283,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
 
   if (loading) {
     return (
-      <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-6 flex items-center justify-center">
+      <div className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-6 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-foreground">
           <Loader2 className="w-8 h-8 animate-spin" />
           <p className="text-sm">Loading stock data...</p>
@@ -211,7 +294,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
 
   if (error) {
     return (
-      <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-6 flex items-center justify-center">
+      <div className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-6 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-foreground">
           <TrendingUp className="w-8 h-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{error}</p>
@@ -221,96 +304,113 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
   }
 
   return (
-    <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-4 flex flex-col relative group">
-      <div className="flex-1 overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-background/95 backdrop-blur-sm z-10">
-            <tr className="border-b border-border/70">
-              <th className="text-left py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Ticker</th>
-              <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Price</th>
-              <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Change</th>
-              <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">YTD</th>
-              <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">vs SPY</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stocks.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">
-                  No stock data available
-                </td>
+    <div className="relative group w-fit max-w-full">
+      {/* Share Button - positioned outside the captured area */}
+      <button
+        onClick={handleShare}
+        disabled={isSharing}
+        className="absolute -top-2 -right-2 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-all duration-200 disabled:opacity-50 opacity-0 group-hover:opacity-100"
+        title={shareSuccess ? 'Shared!' : 'Share as image'}
+      >
+        {isSharing ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : shareSuccess ? (
+          <Check className="w-4 h-4 text-green-500" />
+        ) : (
+          <Share2 className="w-4 h-4" />
+        )}
+      </button>
+
+      <div
+        ref={cardRef}
+        className="w-fit max-w-full h-full rounded-2xl border border-border bg-card shadow-sm p-4 flex flex-col relative"
+      >
+        <div className="flex-1 overflow-auto">
+          <table className="text-sm">
+            <thead className="sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+              <tr className="border-b border-border/70">
+                <th className="text-left py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Ticker</th>
+                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Price</th>
+                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Change</th>
+                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">YTD</th>
+                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">vs SPY</th>
               </tr>
-            ) : (
-              stocks.map((stock, index) => (
-                <motion.tr
-                  key={stock.ticker}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="border-b border-border/30 hover:bg-background/50 transition-colors"
-                >
-                  <td className="py-2.5 px-2">
-                    <div className="font-semibold text-foreground">{stock.ticker}</div>
-                    {stock.name && stock.name !== stock.ticker && (
-                      <div className="text-xs text-muted-foreground truncate max-w-[120px]">{stock.name}</div>
-                    )}
-                    {stock.error && (
-                      <div className="text-xs text-red-500">{stock.error}</div>
-                    )}
+            </thead>
+            <tbody>
+              {stocks.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">
+                    No stock data available
                   </td>
-                  <td className="text-right py-2.5 px-2">
-                    <div className="font-semibold text-foreground">
-                      {stock.price > 0 ? formatPrice(stock.price) : '—'}
-                    </div>
-                  </td>
-                  <td className="text-right py-2.5 px-2">
-                    <div className={`font-semibold flex items-center justify-end gap-1 ${
-                      stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      <span>{stock.change >= 0 ? '▲' : '▼'}</span>
-                      {stock.changePercent !== 0 ? formatPercent(stock.changePercent) : '—'}
-                    </div>
-                    {stock.change !== 0 && (
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {formatAmount(stock.change)}
+                </tr>
+              ) : (
+                stocks.map((stock, index) => (
+                  <motion.tr
+                    key={stock.ticker}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="border-b border-border/30 hover:bg-background/50 transition-colors"
+                  >
+                    <td className="py-2.5 px-2">
+                      <div className="font-semibold text-foreground">{stock.ticker}</div>
+                      {stock.name && stock.name !== stock.ticker && (
+                        <div className="text-xs text-muted-foreground truncate max-w-[120px]">{stock.name}</div>
+                      )}
+                      {stock.error && (
+                        <div className="text-xs text-red-500">{stock.error}</div>
+                      )}
+                    </td>
+                    <td className="text-right py-2.5 px-2">
+                      <div className="font-semibold text-foreground">
+                        {stock.price > 0 ? formatPrice(stock.price) : '—'}
                       </div>
-                    )}
-                  </td>
-                  <td className="text-right py-2.5 px-2">
-                    <div className={`font-semibold flex items-center justify-end gap-1 ${
-                      stock.ytdChangePercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      <span>{stock.ytdChangePercent >= 0 ? '▲' : '▼'}</span>
-                      {stock.ytdChangePercent !== 0 ? formatPercent(stock.ytdChangePercent) : '—'}
-                    </div>
-                    {stock.ytdChangeAmount !== 0 && (
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {formatAmount(stock.ytdChangeAmount)}
+                    </td>
+                    <td className="text-right py-2.5 px-2">
+                      <div className={`font-semibold flex items-center justify-end gap-1 ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                        }`}>
+                        <span>{stock.change >= 0 ? '▲' : '▼'}</span>
+                        {stock.changePercent !== 0 ? formatPercent(stock.changePercent) : '—'}
                       </div>
-                    )}
-                  </td>
-                  <td className="text-right py-2.5 px-2">
-                    {stock.vsSpyPercent !== undefined ? (
-                      <div className={`font-semibold flex items-center justify-end gap-1 ${
-                        stock.vsSpyPercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        <span>{stock.vsSpyPercent >= 0 ? '▲' : '▼'}</span>
-                        {formatPercent(stock.vsSpyPercent)}
+                      {stock.change !== 0 && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {formatAmount(stock.change)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-right py-2.5 px-2">
+                      <div className={`font-semibold flex items-center justify-end gap-1 ${stock.ytdChangePercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                        }`}>
+                        <span>{stock.ytdChangePercent >= 0 ? '▲' : '▼'}</span>
+                        {stock.ytdChangePercent !== 0 ? formatPercent(stock.ytdChangePercent) : '—'}
                       </div>
-                    ) : (
-                      <div className="text-muted-foreground">—</div>
-                    )}
-                  </td>
-                </motion.tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="text-[11px] uppercase tracking-wider text-foreground/80 text-right mt-2 pt-2 border-t border-border/30">
-        Sourced from Yahoo Finance
+                      {stock.ytdChangeAmount !== 0 && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {formatAmount(stock.ytdChangeAmount)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-right py-2.5 px-2">
+                      {stock.vsSpyPercent !== undefined ? (
+                        <div className={`font-semibold flex items-center justify-end gap-1 ${stock.vsSpyPercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          }`}>
+                          <span>{stock.vsSpyPercent >= 0 ? '▲' : '▼'}</span>
+                          {formatPercent(stock.vsSpyPercent)}
+                        </div>
+                      ) : (
+                        <div className="text-muted-foreground">—</div>
+                      )}
+                    </td>
+                  </motion.tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="text-[11px] uppercase tracking-wider text-foreground/80 text-right mt-2 pt-2 border-t border-border/30">
+          iRedlof Intelligence
+        </div>
       </div>
     </div>
   );
 }
-

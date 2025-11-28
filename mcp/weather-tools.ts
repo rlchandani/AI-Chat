@@ -7,27 +7,9 @@
 // Get Google API key from environment variables
 const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
-export interface WeatherData {
-    location: string;
-    temperature: number;
-    condition: string;
-    humidity?: number;
-    windSpeed?: number;
-    visibility?: number;
-    feelsLike?: number;
-    high?: number;
-    low?: number;
-    uvIndex?: number;
-    aqi?: number;
-    weatherIconUrl?: string;
-    hourlyForecast?: Array<{
-        time: string;
-        temperature: number;
-        condition: string;
-        uvIndex: number;
-        weatherIconUrl?: string;
-    }>;
-}
+import { WeatherData, LocationSearchResult } from '@/types/weather';
+
+export type { WeatherData, LocationSearchResult };
 
 /**
  * Get coordinates from location name using Google Geocoding API
@@ -249,7 +231,7 @@ export async function getMultipleWeather(
  */
 export async function searchLocations(
     query: string
-): Promise<Array<{ name: string; formattedAddress: string }>> {
+): Promise<LocationSearchResult[]> {
     if (!GOOGLE_API_KEY) {
         throw new Error('Google Maps API key not configured');
     }
