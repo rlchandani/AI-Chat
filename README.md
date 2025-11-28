@@ -143,12 +143,33 @@ To keep your local environment up to date:
 
 ## 📦 Deployment
 
+### Vercel (Recommended)
 The easiest way to deploy is using [Vercel](https://vercel.com).
 
 1.  Push your code to a Git repository (GitHub/GitLab).
 2.  Import the project into Vercel.
 3.  **Critical:** Add your Environment Variables (`GOOGLE_MAPS_API_KEY`, etc.) in the Vercel Project Settings.
 4.  Deploy!
+
+### Firebase Hosting
+To deploy to Firebase Hosting using GitHub Actions:
+
+1.  **Configure Project ID:**
+    *   Update `.firebaserc` and replace `your-project-id` with your actual Firebase Project ID.
+    *   Update `.github/workflows/firebase-deploy.yml` and replace `your-project-id` (in two places) with your actual ID.
+
+2.  **Generate Service Account:**
+    *   Go to Firebase Console -> Project Settings -> Service accounts.
+    *   Click "Generate new private key".
+    *   This will download a JSON file.
+
+3.  **Add GitHub Secret:**
+    *   Go to your GitHub Repository -> Settings -> Secrets and variables -> Actions.
+    *   Create a new repository secret named `FIREBASE_SERVICE_ACCOUNT_YOUR_PROJECT_ID` (replace `YOUR_PROJECT_ID` with your actual ID, matching the workflow file).
+    *   Paste the *entire content* of the JSON file as the secret value.
+
+4.  **Push to Main:**
+    *   Any push to the `main` branch will now trigger a deployment!
 
 ---
 

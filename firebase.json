@@ -1,0 +1,14 @@
+{
+  "hosting": {
+    "site": "rlchandani-dev-ai-chat",
+    "source": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "frameworksBackend": {
+      "region": "us-central1"
+    }
+  }
+}

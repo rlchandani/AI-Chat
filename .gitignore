@@ -42,3 +42,7 @@ next-env.d.ts
 # ignore node_modules symlink
 node_modules
 node_modules.nosync
+
+# firebase
+.firebase/
+firebase-debug.log
