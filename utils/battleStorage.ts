@@ -228,7 +228,7 @@ export function createNewBattleConversation({ reuseEmpty = true }: { reuseEmpty?
     return newId;
 }
 
-export function getBattleConversationMetadata(conversationId: string): { title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
+export function getBattleConversationMetadata(conversationId: string): { title: string; lastUpdated: number; messageCount: number; createdAt: number; leftModel?: string; rightModel?: string } | null {
     if (typeof window === 'undefined') return null;
 
     try {
@@ -265,6 +265,8 @@ export function getBattleConversationMetadata(conversationId: string): { title: 
                 lastUpdated: history.lastUpdated,
                 messageCount,
                 createdAt: history.createdAt || history.lastUpdated,
+                leftModel: history.leftModel,
+                rightModel: history.rightModel,
             };
         } catch {
             const history: ChatHistory = JSON.parse(stored);
@@ -303,7 +305,7 @@ export function getBattleConversationMetadata(conversationId: string): { title: 
     }
 }
 
-export function getUnsavedBattleConversationMetadata(conversationId: string): { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
+export function getUnsavedBattleConversationMetadata(conversationId: string): { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; leftModel?: string; rightModel?: string } | null {
     if (typeof window === 'undefined') return null;
 
     const stored = localStorage.getItem(`${BATTLE_STORAGE_KEY}-${conversationId}`);
@@ -318,7 +320,7 @@ export function getUnsavedBattleConversationMetadata(conversationId: string): { 
     };
 }
 
-export function getAllBattleConversations(includeUnsaved?: string[]): Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> {
+export function getAllBattleConversations(includeUnsaved?: string[]): Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; leftModel?: string; rightModel?: string }> {
     if (typeof window === 'undefined') return [];
 
     const conversationIds = getAllBattleConversationIds();
@@ -328,9 +330,9 @@ export function getAllBattleConversations(includeUnsaved?: string[]): Array<{ id
             if (!metadata) return null;
             return { id, ...metadata };
         })
-        .filter((conv): conv is { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } => conv !== null);
+        .filter((conv): conv is { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; leftModel?: string; rightModel?: string } => conv !== null);
 
-    const unsavedConvs: Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> = [];
+    const unsavedConvs: Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; leftModel?: string; rightModel?: string }> = [];
     if (includeUnsaved) {
         for (const id of includeUnsaved) {
             if (!savedConvs.some(c => c.id === id)) {

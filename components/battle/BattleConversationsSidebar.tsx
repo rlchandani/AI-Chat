@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { Message } from '@/utils/chatStorage';
 import { Plus, MessageSquare, Trash2, Edit2, X, Check, CheckSquare, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,11 +16,12 @@ import {
     findEmptyBattleConversation,
 } from '@/utils/battleStorage';
 import { getSetting } from '@/utils/settingsStorage';
+import { ModelIcon } from '../chat/ModelIcon';
 
 interface BattleConversationsSidebarProps {
     isOpen: boolean;
     onClose?: () => void;
-    onConversationSelect: (data: any) => void;
+    onConversationSelect: (data: { leftMessages: Message[]; rightMessages: Message[]; leftModel?: string; rightModel?: string }) => void;
     currentConversationId: string;
     onConversationChange: (id: string) => void;
     isGenerating?: boolean;
@@ -33,10 +35,10 @@ export function BattleConversationsSidebar({
     onConversationChange,
     isGenerating = false,
 }: BattleConversationsSidebarProps) {
-    const [conversations, setConversations] = useState<Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }>>([]);
+    const [conversations, setConversations] = useState<Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; leftModel?: string; rightModel?: string }>>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editTitle, setEditTitle] = useState('');
-    const [hoveredId, setHoveredId] = useState<string | null>(null);
+
     const [mounted, setMounted] = useState(false);
     const [unsavedConversationIds, setUnsavedConversationIds] = useState<Set<string>>(new Set());
     const [autoHideSidebar, setAutoHideSidebar] = useState(true);
@@ -47,6 +49,7 @@ export function BattleConversationsSidebar({
 
     // Track if we're on desktop and load settings
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
         if (typeof window !== 'undefined') {
             setAutoHideSidebar(getSetting('autoHideSidebar'));
@@ -69,10 +72,7 @@ export function BattleConversationsSidebar({
     const shouldShow = !autoHideSidebar ? true : isOpen;
 
     // Load conversations when sidebar opens or conversation changes
-    useEffect(() => {
-        loadConversations();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, currentConversationId]);
+
 
     // Track unsaved conversations (conversations that exist but aren't saved)
     useEffect(() => {
@@ -86,6 +86,7 @@ export function BattleConversationsSidebar({
 
             if (!savedIds.includes(currentId) && isEmpty) {
                 // Current conversation is unsaved and empty, add it to the set
+                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setUnsavedConversationIds(prev => {
                     if (prev.has(currentId)) return prev; // Already tracked
                     return new Set([...prev, currentId]);
@@ -103,27 +104,6 @@ export function BattleConversationsSidebar({
     }, [currentConversationId]);
 
     // Listen for storage changes to refresh conversations
-    useEffect(() => {
-        const handleStorageChange = () => {
-            // Remove saved conversations from unsaved set
-            const savedIds = getAllBattleConversationIds();
-            setUnsavedConversationIds(prev => {
-                const next = new Set(prev);
-                savedIds.forEach(id => next.delete(id));
-                return next;
-            });
-            loadConversations();
-        };
-
-        window.addEventListener('storage', handleStorageChange);
-        window.addEventListener('battleConversationUpdated', handleStorageChange);
-
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            window.removeEventListener('battleConversationUpdated', handleStorageChange);
-        };
-    }, []);
-
     const loadConversations = useCallback(() => {
         // Clean up unsaved set - remove any that are now saved
         const savedIds = getAllBattleConversationIds();
@@ -157,10 +137,39 @@ export function BattleConversationsSidebar({
         });
     }, [currentConversationId]);
 
+    useEffect(() => {
+        const handleStorageChange = () => {
+            // Remove saved conversations from unsaved set
+            const savedIds = getAllBattleConversationIds();
+            setUnsavedConversationIds(prev => {
+                const next = new Set(prev);
+                savedIds.forEach(id => next.delete(id));
+                return next;
+            });
+            loadConversations();
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener('battleConversationUpdated', handleStorageChange);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('battleConversationUpdated', handleStorageChange);
+        };
+    }, [loadConversations]);
+
+
+
+    // Load conversations when sidebar opens or conversation changes
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadConversations();
+    }, [isOpen, currentConversationId, loadConversations]);
+
     const handleNewConversation = () => {
         // Check if there's already an unsaved empty conversation
         const savedIds = getAllBattleConversationIds();
-        
+
         const existingUnsaved = Array.from(unsavedConversationIds).find(id => {
             if (savedIds.includes(id)) return false;
             if (!id.startsWith('battle-')) return false;
@@ -196,7 +205,7 @@ export function BattleConversationsSidebar({
 
         // Create new one
         const newId = createNewBattleConversation({ reuseEmpty: false }); // We already checked for empty above
-        
+
         setCurrentBattleConversationId(newId);
         setUnsavedConversationIds(prev => new Set([...prev, newId]));
         onConversationChange(newId);
@@ -207,7 +216,7 @@ export function BattleConversationsSidebar({
             leftModel: '',
             rightModel: ''
         });
-        
+
         // Immediately refresh the conversation list to show the new conversation
         // Need to manually add to conversations since state update is async
         const newConv = {
@@ -238,13 +247,13 @@ export function BattleConversationsSidebar({
 
     const confirmDeleteConversation = () => {
         if (!deleteConfirmation) return;
-        
+
         const conversationId = deleteConfirmation.id;
         const wasCurrentConversation = conversationId === currentConversationId;
 
         // Check if it's a saved conversation
         const savedIds = getAllBattleConversationIds();
-        
+
         if (savedIds.includes(conversationId)) {
             deleteBattleConversation(conversationId);
         } else {
@@ -262,7 +271,7 @@ export function BattleConversationsSidebar({
         // If we deleted the current conversation, switch to another
         if (wasCurrentConversation) {
             const remainingConversations = getAllBattleConversations();
-            
+
             if (remainingConversations.length > 0) {
                 // Switch to the first remaining conversation (most recent)
                 const newConversationId = remainingConversations[0].id;
@@ -276,17 +285,17 @@ export function BattleConversationsSidebar({
                 handleNewConversation();
             }
         }
-        
+
         setDeleteConfirmation(null);
     };
 
-    const handleStartEdit = (e: React.MouseEvent, conversationId: string, currentTitle: string) => {
+    const handleStartEdit = (e: React.SyntheticEvent, conversationId: string, currentTitle: string) => {
         e.stopPropagation();
         setEditingId(conversationId);
         setEditTitle(currentTitle);
     };
 
-    const handleSaveEdit = (e: React.MouseEvent, conversationId: string) => {
+    const handleSaveEdit = (e: React.SyntheticEvent, conversationId: string) => {
         e.stopPropagation();
         if (editTitle.trim()) {
             renameBattleConversation(conversationId, editTitle.trim());
@@ -296,7 +305,7 @@ export function BattleConversationsSidebar({
         setEditTitle('');
     };
 
-    const handleCancelEdit = (e: React.MouseEvent) => {
+    const handleCancelEdit = (e: React.SyntheticEvent) => {
         e.stopPropagation();
         setEditingId(null);
         setEditTitle('');
@@ -519,8 +528,6 @@ export function BattleConversationsSidebar({
                                 return (
                                     <div
                                         key={conv.id}
-                                        onMouseEnter={() => setHoveredId(conv.id)}
-                                        onMouseLeave={() => setHoveredId(null)}
                                         onClick={(e) => {
                                             if (isSelectMode) {
                                                 toggleSelectConversation(e, conv.id);
@@ -546,9 +553,9 @@ export function BattleConversationsSidebar({
                                                     onChange={(e) => setEditTitle(e.target.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
-                                                            handleSaveEdit(e as any, conv.id);
+                                                            handleSaveEdit(e, conv.id);
                                                         } else if (e.key === 'Escape') {
-                                                            handleCancelEdit(e as any);
+                                                            handleCancelEdit(e);
                                                         }
                                                     }}
                                                     onClick={(e) => e.stopPropagation()}
@@ -586,8 +593,16 @@ export function BattleConversationsSidebar({
                                                             {!isSelectMode && (
                                                                 <MessageSquare size={16} className={isActive ? 'text-primary' : 'text-muted-foreground shrink-0'} />
                                                             )}
+                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                {conv.leftModel && (
+                                                                    <ModelIcon modelId={conv.leftModel} size={14} />
+                                                                )}
+                                                                {conv.rightModel && (
+                                                                    <ModelIcon modelId={conv.rightModel} size={14} />
+                                                                )}
+                                                            </div>
                                                             <h3 className={`
-                                                                        text-sm font-medium truncate
+                                                                        text-sm font-medium truncate flex-1
                                                                         ${isActive && !isSelectMode ? 'text-primary' : 'text-foreground'}
                                                                     `}>
                                                                 {conv.title}
@@ -696,7 +711,7 @@ export function BattleConversationsSidebar({
                                 {/* Content */}
                                 <div className="p-6 space-y-4">
                                     <p className="text-sm text-muted-foreground">
-                                        Are you sure you want to delete <span className="font-medium text-foreground">"{deleteConfirmation.title}"</span>? This will permanently remove this battle and all its messages.
+                                        Are you sure you want to delete <span className="font-medium text-foreground">&quot;{deleteConfirmation.title}&quot;</span>? This will permanently remove this battle and all its messages.
                                     </p>
 
                                     {/* Action Buttons */}

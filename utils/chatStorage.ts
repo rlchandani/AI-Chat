@@ -375,7 +375,7 @@ export function exportChatHistory(conversationId?: string): string {
 /**
  * Get conversation metadata
  */
-export function getConversationMetadata(conversationId: string): { title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
+export function getConversationMetadata(conversationId: string): { title: string; lastUpdated: number; messageCount: number; createdAt: number; model?: string } | null {
     if (typeof window === 'undefined') return null;
 
     try {
@@ -412,6 +412,7 @@ export function getConversationMetadata(conversationId: string): { title: string
             lastUpdated: history.lastUpdated,
             messageCount: history.messages.length,
             createdAt: history.createdAt || history.lastUpdated,
+            model: history.model,
         };
     } catch (error) {
         console.error('Failed to get conversation metadata:', error);
@@ -422,7 +423,7 @@ export function getConversationMetadata(conversationId: string): { title: string
 /**
  * Get metadata for an unsaved conversation (not in localStorage)
  */
-export function getUnsavedConversationMetadata(conversationId: string): { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } | null {
+export function getUnsavedConversationMetadata(conversationId: string): { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; model?: string } | null {
     if (typeof window === 'undefined') return null;
 
     // Check if it's the current conversation and not saved
@@ -436,13 +437,15 @@ export function getUnsavedConversationMetadata(conversationId: string): { id: st
         lastUpdated: Date.now(),
         messageCount: 0,
         createdAt: Date.now(),
+        // We don't know the model yet for unsaved, or could look up current selection?
+        // For now leave undefined
     };
 }
 
 /**
  * Get all conversations with metadata (including unsaved ones)
  */
-export function getAllConversations(includeUnsaved?: string[]): Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> {
+export function getAllConversations(includeUnsaved?: string[]): Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; model?: string }> {
     if (typeof window === 'undefined') return [];
 
     const conversationIds = getAllConversationIds();
@@ -452,10 +455,10 @@ export function getAllConversations(includeUnsaved?: string[]): Array<{ id: stri
             if (!metadata) return null;
             return { id, ...metadata };
         })
-        .filter((conv): conv is { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number } => conv !== null);
+        .filter((conv): conv is { id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; model?: string } => conv !== null);
 
     // Add unsaved conversations if provided
-    const unsavedConvs: Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }> = [];
+    const unsavedConvs: Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; model?: string }> = [];
     if (includeUnsaved) {
         for (const id of includeUnsaved) {
             // Only include if not already in saved conversations

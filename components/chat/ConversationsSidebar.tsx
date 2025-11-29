@@ -13,13 +13,15 @@ import {
     loadChatHistory,
     getAllConversationIds,
     findEmptyConversation,
+    Message,
 } from '@/utils/chatStorage';
 import { getSetting } from '@/utils/settingsStorage';
+import { ModelIcon } from './ModelIcon';
 
 interface ConversationsSidebarProps {
     isOpen: boolean;
     onClose?: () => void;
-    onConversationSelect: (messages: any[]) => void;
+    onConversationSelect: (messages: Message[]) => void;
     currentConversationId: string;
     onConversationChange: (id: string) => void;
     isGenerating?: boolean;
@@ -33,7 +35,7 @@ export function ConversationsSidebar({
     onConversationChange,
     isGenerating = false,
 }: ConversationsSidebarProps) {
-    const [conversations, setConversations] = useState<Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number }>>([]);
+    const [conversations, setConversations] = useState<Array<{ id: string; title: string; lastUpdated: number; messageCount: number; createdAt: number; model?: string }>>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editTitle, setEditTitle] = useState('');
     const [mounted, setMounted] = useState(false);
@@ -46,6 +48,7 @@ export function ConversationsSidebar({
 
     // Track if we're on desktop and load settings
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
         if (typeof window !== 'undefined') {
             setAutoHideSidebar(getSetting('autoHideSidebar'));
@@ -68,10 +71,7 @@ export function ConversationsSidebar({
     const shouldShow = !autoHideSidebar ? true : isOpen;
 
     // Load conversations when sidebar opens or conversation changes
-    useEffect(() => {
-        loadConversations();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, currentConversationId]);
+
 
     // Track unsaved conversations (conversations that exist but aren't saved)
     useEffect(() => {
@@ -83,6 +83,7 @@ export function ConversationsSidebar({
 
             if (!savedIds.includes(currentId) && isEmpty) {
                 // Current conversation is unsaved and empty, add it to the set
+                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setUnsavedConversationIds(prev => {
                     if (prev.has(currentId)) return prev; // Already tracked
                     return new Set([...prev, currentId]);
@@ -100,6 +101,23 @@ export function ConversationsSidebar({
     }, [currentConversationId]);
 
     // Listen for storage changes to refresh conversations
+    const loadConversations = useCallback(() => {
+        // Clean up unsaved set - remove any that are now saved
+        const savedIds = getAllConversationIds();
+
+        setUnsavedConversationIds(prev => {
+            const next = new Set(prev);
+            savedIds.forEach(id => next.delete(id));
+
+            // Load conversations with cleaned unsaved IDs
+            const unsavedIds = Array.from(next);
+            const allConvs = getAllConversations(unsavedIds);
+            setConversations(allConvs);
+
+            return next;
+        });
+    }, []);
+
     useEffect(() => {
         const handleStorageChange = () => {
             // Remove saved conversations from unsaved set
@@ -119,24 +137,15 @@ export function ConversationsSidebar({
             window.removeEventListener('storage', handleStorageChange);
             window.removeEventListener('conversationUpdated', handleStorageChange);
         };
-    }, []);
+    }, [loadConversations]);
 
-    const loadConversations = useCallback(() => {
-        // Clean up unsaved set - remove any that are now saved
-        const savedIds = getAllConversationIds();
 
-        setUnsavedConversationIds(prev => {
-            const next = new Set(prev);
-            savedIds.forEach(id => next.delete(id));
 
-            // Load conversations with cleaned unsaved IDs
-            const unsavedIds = Array.from(next);
-            const allConvs = getAllConversations(unsavedIds);
-            setConversations(allConvs);
-
-            return next;
-        });
-    }, []);
+    // Load conversations when sidebar opens or conversation changes
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadConversations();
+    }, [isOpen, currentConversationId, loadConversations]);
 
     const handleNewConversation = () => {
         // Check if there's already an unsaved empty conversation
@@ -184,7 +193,7 @@ export function ConversationsSidebar({
 
     const confirmDeleteConversation = () => {
         if (!deleteConfirmation) return;
-        
+
         const conversationId = deleteConfirmation.id;
         const wasCurrentConversation = conversationId === currentConversationId;
 
@@ -219,17 +228,17 @@ export function ConversationsSidebar({
                 handleNewConversation();
             }
         }
-        
+
         setDeleteConfirmation(null);
     };
 
-    const handleStartEdit = (e: React.MouseEvent, conversationId: string, currentTitle: string) => {
+    const handleStartEdit = (e: React.SyntheticEvent, conversationId: string, currentTitle: string) => {
         e.stopPropagation();
         setEditingId(conversationId);
         setEditTitle(currentTitle);
     };
 
-    const handleSaveEdit = (e: React.MouseEvent, conversationId: string) => {
+    const handleSaveEdit = (e: React.SyntheticEvent, conversationId: string) => {
         e.stopPropagation();
         if (editTitle.trim()) {
             renameConversation(conversationId, editTitle.trim());
@@ -239,7 +248,7 @@ export function ConversationsSidebar({
         setEditTitle('');
     };
 
-    const handleCancelEdit = (e: React.MouseEvent) => {
+    const handleCancelEdit = (e: React.SyntheticEvent) => {
         e.stopPropagation();
         setEditingId(null);
         setEditTitle('');
@@ -487,9 +496,9 @@ export function ConversationsSidebar({
                                                     onChange={(e) => setEditTitle(e.target.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
-                                                            handleSaveEdit(e as any, conv.id);
+                                                            handleSaveEdit(e, conv.id);
                                                         } else if (e.key === 'Escape') {
-                                                            handleCancelEdit(e as any);
+                                                            handleCancelEdit(e);
                                                         }
                                                     }}
                                                     onClick={(e) => e.stopPropagation()}
@@ -527,8 +536,11 @@ export function ConversationsSidebar({
                                                             {!isSelectMode && (
                                                                 <MessageSquare size={16} className={isActive ? 'text-primary' : 'text-muted-foreground shrink-0'} />
                                                             )}
+                                                            {conv.model && (
+                                                                <ModelIcon modelId={conv.model} size={14} className="shrink-0" />
+                                                            )}
                                                             <h3 className={`
-                                                                        text-sm font-medium truncate
+                                                                        text-sm font-medium truncate flex-1
                                                                         ${isActive && !isSelectMode ? 'text-primary' : 'text-foreground'}
                                                                     `}>
                                                                 {conv.title}
@@ -637,7 +649,7 @@ export function ConversationsSidebar({
                                 {/* Content */}
                                 <div className="p-6 space-y-4">
                                     <p className="text-sm text-muted-foreground">
-                                        Are you sure you want to delete <span className="font-medium text-foreground">"{deleteConfirmation.title}"</span>? This will permanently remove this conversation and all its messages.
+                                        Are you sure you want to delete <span className="font-medium text-foreground">&quot;{deleteConfirmation.title}&quot;</span>? This will permanently remove this conversation and all its messages.
                                     </p>
 
                                     {/* Action Buttons */}
