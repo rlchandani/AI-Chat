@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Message } from '@/utils/chatStorage';
 import { Plus, MessageSquare, Trash2, Edit2, X, Check, CheckSquare, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+import { Message } from '@/utils/chatStorage';
 import {
     getAllBattleConversations,
     getCurrentBattleConversationId,

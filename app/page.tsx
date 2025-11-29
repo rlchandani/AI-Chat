@@ -1,7 +1,12 @@
 'use client';
 
-import { useState, useEffect, type ReactNode } from 'react';
-import { useManualChat, type ApiKeyError } from '@/hooks/use-manual-chat';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter, usePathname } from 'next/navigation';
+import { Menu, Settings as SettingsIcon } from 'lucide-react';
+
+import { useManualChat, type ApiKeyError, type UsageInfo } from '@/hooks/use-manual-chat';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { InputArea } from '@/components/chat/InputArea';
 import { ModelSelector } from '@/components/chat/ModelSelector';
@@ -11,13 +16,10 @@ import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ShareConversation } from '@/components/chat/ShareConversation';
 import { Settings, type HighlightApiKey } from '@/components/chat/Settings';
 import { APIKeyModal, type ApiKeyType } from '@/components/chat/APIKeyModal';
-import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel } from '@/utils/modelStorage';
-import { getCurrentConversationId, createNewConversation, loadChatHistory, loadUsageStats, getConversationMetadata, getUnsavedConversationMetadata, setCurrentConversationId as saveCurrentConversationId, findEmptyConversation, saveConversationModel, loadConversationModel } from '@/utils/chatStorage';
-import { getSetting, apiKeysNeedUnlock, unlockApiKeys, isApiKeyLocked } from '@/utils/settingsStorage';
 import { PinUnlockModal } from '@/components/chat/PinUnlockModal';
-import { Menu, Settings as SettingsIcon } from 'lucide-react';
-import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel } from '@/utils/modelStorage';
+import { getCurrentConversationId, createNewConversation, loadChatHistory, loadUsageStats, getConversationMetadata, getUnsavedConversationMetadata, setCurrentConversationId as saveCurrentConversationId, findEmptyConversation, saveConversationModel, loadConversationModel, saveChatHistory, saveUsageStats, type Message } from '@/utils/chatStorage';
+import { getSetting, apiKeysNeedUnlock, unlockApiKeys, isApiKeyLocked } from '@/utils/settingsStorage';
 
 export default function Home() {
   const router = useRouter();
@@ -55,14 +57,27 @@ export default function Home() {
     });
   };
 
-  const { messages, isLoading, stop, append, clearMessages, setMessages, usageInfo, apiKeyError, clearApiKeyError } = useManualChat({
+
+  // Custom storage helpers to ensure we always use the current conversation ID from state
+  // This prevents race conditions where other tabs might change the localStorage "current" ID
+  const storage = useMemo(() => ({
+    saveHistory: (messages: Message[]) => saveChatHistory(messages, currentConversationId),
+    loadHistory: () => loadChatHistory(currentConversationId),
+    loadUsageStats: () => loadUsageStats(currentConversationId),
+    saveUsageStats: (id: string, usage: UsageInfo, modelId: string) => saveUsageStats(id, usage, modelId),
+    getCurrentConversationId: () => currentConversationId,
+  }), [currentConversationId]);
+
+  const { messages, isLoading, stop, append, setMessages, usageInfo, clearApiKeyError } = useManualChat({
     api: '/api/chat',
     model: selectedModel,
     onApiKeyError: handleApiKeyError,
+    storage,
   });
 
   // Initialize model and conversation from localStorage only on client after mount
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     if (typeof window !== 'undefined') {
       // Check if there's a conversation ID in the URL (shared link)
@@ -163,7 +178,7 @@ export default function Home() {
         setShowPinUnlock(true);
       }
     }
-  }, []);
+  }, [router, setMessages]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -246,7 +261,7 @@ export default function Home() {
     setModelChangeDialog({ isOpen: false, newModelId: null });
   };
 
-  const handleSwitchConversation = (messages: any[]) => {
+  const handleSwitchConversation = (messages: Message[]) => {
     setMessages(messages);
     // Clear input when switching
     setInput('');
@@ -295,6 +310,7 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const autoHide = getSetting('autoHideSidebar');
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAutoHideSidebar(autoHide);
       if (!autoHide) {
         setSidebarOpen(true);
@@ -328,6 +344,7 @@ export default function Home() {
     if (currentConversationId) {
       const savedUsage = loadUsageStats(currentConversationId);
       if (savedUsage) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCumulativeUsage({
           tokens: savedUsage.totalTokens,
           cost: savedUsage.totalCost,
@@ -370,6 +387,7 @@ export default function Home() {
     if (currentConversationId && messages.length > 0) {
       const metadata = getConversationMetadata(currentConversationId);
       if (metadata) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setConversationTitle(metadata.title);
       }
     }
@@ -420,9 +438,11 @@ export default function Home() {
               </button>
             )}
             <div className="flex items-center gap-2">
-              <img
+              <Image
                 src="/logo.png"
                 alt="Logo"
+                width={32}
+                height={32}
                 className="h-8 w-8 object-contain"
               />
               <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
