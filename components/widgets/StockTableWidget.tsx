@@ -31,7 +31,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       };
     }
     return stock;
-  });
+  })?.sort((a, b) => a.ticker.localeCompare(b.ticker));
 
   const [stocks, setStocks] = useState<StockData[]>(processedInitialData || []);
   const [loading, setLoading] = useState(!initialData);
@@ -146,7 +146,8 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       }
 
       const data = await response.json();
-      setStocks(data.stocks || []);
+      const sortedStocks = (data.stocks || []).sort((a: StockData, b: StockData) => a.ticker.localeCompare(b.ticker));
+      setStocks(sortedStocks);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load stock data');
       console.error('Stock fetch error:', err);
@@ -196,7 +197,8 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       }
 
       const data = await response.json();
-      setStocks(data.stocks || []);
+      const sortedStocks = (data.stocks || []).sort((a: StockData, b: StockData) => a.ticker.localeCompare(b.ticker));
+      setStocks(sortedStocks);
       setRefreshMessage('Stock data updated successfully!');
       setTimeout(() => {
         setRefreshMessage(null);
