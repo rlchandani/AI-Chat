@@ -531,13 +531,14 @@ export function WeatherCard({
     };
 
     return (
-        <div className="relative">
+        <div className="relative h-full">
             {/* Share Button - positioned outside the captured area */}
             <button
                 onClick={handleShare}
                 disabled={isSharing}
                 className="absolute -top-2 -right-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-all duration-200 disabled:opacity-50"
                 title={shareSuccess ? 'Shared!' : 'Share as image'}
+                aria-label="Share as image"
             >
                 {isSharing ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -674,6 +675,7 @@ export function WeatherCard({
                                     onClick={handleToggleAutoLocation}
                                     className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                     title="Use your current location"
+                                    aria-label="Use your current location"
                                 >
                                     <MapPin size={12} />
                                     <span>Use my location</span>
@@ -684,6 +686,7 @@ export function WeatherCard({
                                     onClick={handleToggleAutoLocation}
                                     className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                     title="Switch to manual location"
+                                    aria-label="Switch to manual location"
                                 >
                                     <MapPinOff size={12} />
                                     <span>Manual location</span>

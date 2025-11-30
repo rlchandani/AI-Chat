@@ -332,13 +332,14 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
   }
 
   return (
-    <div className="relative group w-fit max-w-full">
+    <div className="relative group w-full h-full">
       {/* Share Button - positioned outside the captured area */}
       <button
         onClick={handleShare}
         disabled={isSharing}
         className="absolute -top-2 -right-2 z-20 w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-all duration-200 disabled:opacity-50 opacity-0 group-hover:opacity-100"
         title={shareSuccess ? 'Shared!' : 'Share as image'}
+        aria-label="Share as image"
       >
         {isSharing ? (
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -351,7 +352,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
 
       <div
         ref={cardRef}
-        className="w-fit max-w-full h-full rounded-2xl border border-border bg-card shadow-sm p-4 flex flex-col relative"
+        className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-4 flex flex-col relative"
       >
         <div className="flex-1 overflow-auto">
           <table className="text-sm">

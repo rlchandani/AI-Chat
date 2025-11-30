@@ -22,7 +22,7 @@ export function WidgetCardFrame({
         <div
             style={style}
             className={clsx(
-                'rounded-2xl border border-border bg-card shadow-md overflow-hidden flex flex-col h-auto w-full',
+                'rounded-2xl border border-border bg-card shadow-md overflow-hidden flex flex-col h-full w-full',
                 isOver ? 'ring-2 ring-primary/40 border-primary/30' : undefined,
                 className
             )}

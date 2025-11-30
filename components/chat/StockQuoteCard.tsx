@@ -276,13 +276,14 @@ export function StockQuoteCard({
     };
 
     return (
-        <div className="relative">
+        <div className="relative h-full">
             {/* Share Button - positioned outside the captured area */}
             <button
                 onClick={handleShare}
                 disabled={isSharing}
                 className="absolute -top-2 -right-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-all duration-200 disabled:opacity-50"
                 title={shareSuccess ? 'Shared!' : 'Share as image'}
+                aria-label="Share as image"
             >
                 {isSharing ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

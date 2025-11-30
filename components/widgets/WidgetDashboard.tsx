@@ -187,6 +187,7 @@ export function WidgetDashboard() {
     widget?: WidgetInstance;
     from?: 'board' | 'library';
     data?: WidgetData; // Cache for drag preview data
+    initialSize?: { width: number; height: number }; // Capture initial size for smooth drag
   } | null>(null);
   const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -272,12 +273,27 @@ export function WidgetDashboard() {
       // Dragging from board - store full widget object for DragOverlay clone
       const current = widgets.find((w) => w.id === event.active.id);
       if (current) {
+        // Capture the initial dimensions of the dragged item
+        // Try dnd-kit's rect first, then fallback to DOM measurement
+        let width = event.active.rect.current.initial?.width;
+        let height = event.active.rect.current.initial?.height;
+
+        if (!width || !height) {
+          const element = document.getElementById(current.id);
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            width = rect.width;
+            height = rect.height;
+          }
+        }
+
         setActiveDrag({
           id: current.id,
           type: current.type,
           widget: current, // Store full widget for DragOverlay
           from: 'board',
-          data: widgetDataRef.current[current.id] // Pass cached data to preview
+          data: widgetDataRef.current[current.id], // Pass cached data to preview
+          initialSize: width && height ? { width, height } : undefined
         });
       }
     }
@@ -468,7 +484,14 @@ export function WidgetDashboard() {
             easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
           }}>
             {activeDrag ? (
-              <div className="cursor-grabbing shadow-2xl scale-105" style={{ width: FIXED_WIDGET_WIDTH }}>
+              <div
+                className="cursor-grabbing shadow-2xl origin-top-left"
+                style={{
+                  width: activeDrag.initialSize?.width ?? (SIZE_PRESETS[activeDrag.type]?.width || FIXED_WIDGET_WIDTH),
+                  height: activeDrag.initialSize?.height,
+                  transform: 'scale(0.99) rotate(2deg)', // Scale to 99% and tilt slightly
+                }}
+              >
                 {activeDrag.widget ? (
                   // Dragging from board - show clone of actual widget (no API calls)
                   <DragPreview widget={activeDrag.widget} initialData={activeDrag.data} />
@@ -684,9 +707,10 @@ function SortableWidgetCard({
     <>
       <div
         ref={setNodeRef}
+        id={widget.id} // Add ID for robust size measurement during drag
         style={placeholderStyle}
         className={clsx(
-          'rounded-2xl flex flex-col h-auto group relative transition-all duration-200',
+          'rounded-2xl flex flex-col h-full group relative transition-all duration-200',
           isDragging && 'border-2 border-dashed border-primary/30 bg-primary/5',
           !isDragging && 'border border-transparent'
         )}
