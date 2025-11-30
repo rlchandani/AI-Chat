@@ -119,6 +119,12 @@ You MUST generate a text response that includes:
 NEVER just call a tool and stop. ALWAYS follow up with a complete text response.`;
 
 import { formatToolResultAsText } from '@/utils/formatters';
+import { 
+    decryptFromTransit, 
+    isEncryptedPayload, 
+    TransitEncryptionError,
+    ERROR_CODES 
+} from '@/utils/transitEncryption.server';
 
 // Define all tools for AI SDK v5 (compatible with both OpenAI and Google)
 // AI SDK v5 uses 'inputSchema' instead of 'parameters'
@@ -241,7 +247,7 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
     try {
-        const { messages, model, apiKey, provider: clientProvider } = await req.json();
+        const { messages, model, apiKey: rawApiKey, provider: clientProvider } = await req.json();
 
         // Get model info to determine provider
         const modelInfo = getModelInfo(model || DEFAULT_MODEL);
@@ -258,13 +264,67 @@ export async function POST(req: Request) {
         // Use provider from client or determine from model
         const provider = clientProvider || modelInfo.provider;
 
+        // Decrypt API key if it's encrypted, otherwise use as-is
+        let clientApiKey: string | undefined;
+        if (rawApiKey) {
+            if (isEncryptedPayload(rawApiKey)) {
+                try {
+                    clientApiKey = await decryptFromTransit(rawApiKey);
+                } catch (error) {
+                    console.error('Transit decryption error:', error);
+                    
+                    // Handle specific decryption errors with appropriate status codes
+                    if (error instanceof TransitEncryptionError) {
+                        if (error.code === ERROR_CODES.AUTH_TAG_MISMATCH) {
+                            return new Response(
+                                JSON.stringify({ 
+                                    error: 'Authentication failed - encrypted data may have been tampered with',
+                                    errorType: 'TRANSIT_AUTH_FAILED'
+                                }),
+                                {
+                                    status: 401,
+                                    headers: { 'Content-Type': 'application/json' },
+                                }
+                            );
+                        } else if (error.code === ERROR_CODES.INVALID_PAYLOAD) {
+                            return new Response(
+                                JSON.stringify({ 
+                                    error: 'Invalid encrypted payload format',
+                                    errorType: 'TRANSIT_INVALID_PAYLOAD'
+                                }),
+                                {
+                                    status: 400,
+                                    headers: { 'Content-Type': 'application/json' },
+                                }
+                            );
+                        }
+                    }
+                    
+                    // Generic decryption error
+                    return new Response(
+                        JSON.stringify({ 
+                            error: 'Failed to decrypt API key',
+                            errorType: 'TRANSIT_DECRYPTION_FAILED'
+                        }),
+                        {
+                            status: 400,
+                            headers: { 'Content-Type': 'application/json' },
+                        }
+                    );
+                }
+            } else {
+                // Backward compatibility: handle unencrypted API keys
+                clientApiKey = rawApiKey as string;
+            }
+        }
+
         // Check for required API key based on provider
         // Priority: client-provided key > environment variable
         const envKey = provider === 'google'
             ? process.env.GOOGLE_GENERATIVE_AI_API_KEY
             : process.env.OPENAI_API_KEY;
 
-        const effectiveApiKey = apiKey || envKey || '';
+        const effectiveApiKey = clientApiKey || envKey || '';
 
         if (!effectiveApiKey) {
             const keyType = provider === 'google' ? 'gemini' : 'openai';

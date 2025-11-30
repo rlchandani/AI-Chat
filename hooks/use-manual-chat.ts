@@ -10,6 +10,7 @@ import {
 } from '@/utils/chatStorage';
 import { calculateCost, getModelInfo } from '@/utils/modelStorage';
 import { getApiKey } from '@/utils/settingsStorage';
+import { encryptForTransit, isTransitEncryptionSupported, type EncryptedPayload } from '@/utils/transitEncryption.client';
 
 export interface UsageInfo {
     promptTokens: number;
@@ -153,13 +154,28 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
                 ? getApiKey('gemini')
                 : getApiKey('openai');
 
+            // Encrypt API key for transit if supported
+            let apiKeyPayload: string | EncryptedPayload = apiKey;
+            if (isTransitEncryptionSupported()) {
+                try {
+                    apiKeyPayload = await encryptForTransit(apiKey);
+                } catch (error) {
+                    // Fall back to unencrypted transmission with warning
+                    console.warn('Transit encryption failed, falling back to unencrypted transmission:', error);
+                    apiKeyPayload = apiKey;
+                }
+            } else {
+                // Web Crypto API not supported - fall back to unencrypted
+                console.warn('Transit encryption not supported in this browser, using unencrypted transmission');
+            }
+
             const response = await fetch(api, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: messagesToSend,
                     model: currentModel,
-                    apiKey, // Only send the relevant API key
+                    apiKey: apiKeyPayload, // Send encrypted payload or plain string
                     provider, // Tell server which provider we're using
                 }),
                 signal: controller.signal,
