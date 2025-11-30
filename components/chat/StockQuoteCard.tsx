@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Loader2, TrendingUp, Share2, Check } from 'lucide-react';
 import * as htmlToImage from 'html-to-image';
 
+import { StockUI } from '@/types/stock';
+
 interface StockQuoteCardProps {
     ticker: string;
     name?: string;
@@ -15,9 +17,9 @@ interface StockQuoteCardProps {
     spyYtdChangePercent?: number;
     autoFetch?: boolean;
     onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void }) => void;
+    onDataChange?: (data: StockUI) => void;
+    initialData?: StockUI | null;
 }
-
-import { StockUI } from '@/types/stock';
 
 // Use centralized StockUI type but alias it to StockData for local compatibility
 type StockData = StockUI;
@@ -33,9 +35,11 @@ export function StockQuoteCard({
     spyYtdChangePercent: initialSpyYtdChangePercent,
     autoFetch = true,
     onRefreshStateChange,
+    onDataChange,
+    initialData,
 }: StockQuoteCardProps) {
     const [stockData, setStockData] = useState<StockData | null>(
-        initialPrice !== undefined
+        initialData || (initialPrice !== undefined
             ? {
                 ticker: initialTicker,
                 name: initialName || initialTicker,
@@ -52,8 +56,22 @@ export function StockQuoteCard({
                 marketState: 'UNKNOWN',
                 exchange: 'UNKNOWN'
             }
-            : null
+            : null)
     );
+
+    // Sync initialData when it changes (e.g. during drag operations)
+    useEffect(() => {
+        if (initialData) {
+            setStockData(initialData);
+        }
+    }, [initialData]);
+
+    // Sync local data changes to parent
+    useEffect(() => {
+        if (stockData && onDataChange) {
+            onDataChange(stockData);
+        }
+    }, [stockData, onDataChange]);
     const [loading, setLoading] = useState(autoFetch && initialPrice === undefined);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -80,6 +98,7 @@ export function StockQuoteCard({
             const ticker = stockData?.ticker || initialTicker;
             const data = await fetchStockData(ticker);
             setStockData(data);
+            if (onDataChange) onDataChange(data);
             setRefreshMessage('Stock data updated successfully!');
             setTimeout(() => setRefreshMessage(null), 3000);
         } catch {
@@ -87,7 +106,7 @@ export function StockQuoteCard({
         } finally {
             setRefreshing(false);
         }
-    }, [stockData?.ticker, initialTicker, fetchStockData]);
+    }, [stockData?.ticker, initialTicker, fetchStockData, onDataChange]);
 
     // Share card as image - Gold Standard implementation
     const handleShare = useCallback(async () => {

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Thermometer, Eye, Loader2, Gauge, MapPin, MapPinOff, Share2, Check } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Cloud, Sun, Wind, Droplets, Thermometer, Eye, Loader2, Gauge, MapPin, MapPinOff, Share2, Check } from 'lucide-react';
 import clsx from 'clsx';
 import * as htmlToImage from 'html-to-image';
 
@@ -31,10 +31,12 @@ interface WeatherCardProps {
     useAutoLocation?: boolean;
     unitType?: 'imperial' | 'metric';
     onLocationChange?: (location: string) => void;
-    onAutoLocationChange?: (enabled: boolean) => void;
+    onAutoLocationChange?: (useAuto: boolean) => void;
+    onDataChange?: (data: WeatherData) => void;
+    initialData?: WeatherData | null;
 }
 
-interface WeatherData {
+export interface WeatherData {
     location: string;
     temperature: number;
     condition: string;
@@ -59,38 +61,31 @@ interface WeatherData {
 export function WeatherCard({
     location: initialLocation = 'San Francisco',
     temperature: initialTemperature,
-    condition: initialCondition,
-    humidity: initialHumidity,
-    windSpeed: initialWindSpeed,
-    visibility: initialVisibility,
-    feelsLike: initialFeelsLike,
-    high: initialHigh,
-    low: initialLow,
     autoFetch = true,
     onRefreshStateChange,
     useAutoLocation = false,
     unitType = 'imperial',
     onLocationChange,
     onAutoLocationChange,
+    onDataChange,
+    initialData,
 }: WeatherCardProps) {
-    const [weatherData, setWeatherData] = useState<WeatherData | null>(
-        initialTemperature !== undefined
-            ? {
-                location: initialLocation,
-                temperature: initialTemperature,
-                condition: initialCondition || 'Unknown',
-                humidity: initialHumidity,
-                windSpeed: initialWindSpeed,
-                visibility: initialVisibility,
-                feelsLike: initialFeelsLike,
-                high: initialHigh,
-                low: initialLow,
-                uvIndex: undefined,
-                aqi: undefined,
-                hourlyForecast: undefined,
-            }
-            : null
-    );
+    const [weatherData, setWeatherData] = useState<WeatherData | null>(initialData || null);
+
+    // Sync initialData when it changes
+    useEffect(() => {
+        if (initialData) {
+            setWeatherData(initialData);
+        }
+    }, [initialData]);
+
+    // Sync local data changes to parent
+    useEffect(() => {
+        if (weatherData && onDataChange) {
+            onDataChange(weatherData);
+        }
+    }, [weatherData, onDataChange]);
+
     const [loading, setLoading] = useState(autoFetch && initialTemperature === undefined);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -121,6 +116,7 @@ export function WeatherCard({
 
             const data = await response.json();
             setWeatherData(data);
+            if (onDataChange) onDataChange(data);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load weather');
             console.error('Weather fetch error:', err);
@@ -154,6 +150,7 @@ export function WeatherCard({
                             }
 
                             setWeatherData(data);
+                            if (onDataChange) onDataChange(data);
                             setRefreshMessage('Weather data updated successfully!');
                             setTimeout(() => {
                                 setRefreshMessage(null);
@@ -183,6 +180,7 @@ export function WeatherCard({
                                     throw new Error(data.error);
                                 }
                                 setWeatherData(data);
+                                if (onDataChange) onDataChange(data);
                                 setRefreshMessage('Weather data updated successfully!');
                                 setTimeout(() => {
                                     setRefreshMessage(null);
@@ -222,6 +220,7 @@ export function WeatherCard({
                 }
 
                 setWeatherData(data);
+                if (onDataChange) onDataChange(data);
                 setRefreshMessage('Weather data updated successfully!');
                 setTimeout(() => {
                     setRefreshMessage(null);
@@ -237,7 +236,7 @@ export function WeatherCard({
                 setRefreshing(false);
             }
         }
-    }, [weatherData?.location, initialLocation, autoLocationEnabled, unitType]);
+    }, [weatherData?.location, initialLocation, autoLocationEnabled, unitType, onDataChange]);
 
     // Expose refresh state to parent
     useEffect(() => {
@@ -325,7 +324,7 @@ export function WeatherCard({
                 maximumAge: 300000, // Cache for 5 minutes
             }
         );
-    }, [onLocationChange]);
+    }, [onLocationChange, unitType]);
 
     // Handle auto-location toggle
     const handleToggleAutoLocation = () => {
@@ -349,6 +348,8 @@ export function WeatherCard({
             requestUserLocation();
         }
     };
+
+
 
     // Share card as image - Gold Standard implementation
     const handleShare = useCallback(async () => {
@@ -446,7 +447,7 @@ export function WeatherCard({
                         setLoading(false);
                     }
                 };
-                loadWeather();
+                loadWeather().catch(console.error);
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps

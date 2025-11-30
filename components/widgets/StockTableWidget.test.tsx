@@ -92,4 +92,67 @@ describe('StockTableWidget', () => {
         expect(rows[1]).toHaveTextContent('AAPL');
         expect(rows[2]).toHaveTextContent('MSFT');
     });
+
+    it('deduplicates initial data by ticker', () => {
+        const duplicateStocks = [
+            ...mockStocks,
+            { ...mockStocks[0] } // Duplicate MSFT
+        ];
+
+        render(<StockTableWidget tickers="MSFT,AAPL" initialData={duplicateStocks} />);
+
+        const rows = screen.getAllByRole('row');
+        // Header + 2 unique stocks = 3 rows
+        expect(rows).toHaveLength(3);
+        expect(rows[1]).toHaveTextContent('AAPL');
+        expect(rows[2]).toHaveTextContent('MSFT');
+    });
+
+    it('deduplicates fetched data by ticker', async () => {
+        const duplicateFetchedStocks = [
+            ...mockStocks,
+            { ...mockStocks[1] } // Duplicate AAPL
+        ];
+
+        (global.fetch as any).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ stocks: duplicateFetchedStocks }),
+        });
+
+        render(<StockTableWidget tickers="MSFT,AAPL" />);
+
+        await waitFor(() => {
+            expect(screen.queryByText('Loading stock data...')).not.toBeInTheDocument();
+        });
+
+        const rows = screen.getAllByRole('row');
+        // Header + 2 unique stocks = 3 rows
+        expect(rows).toHaveLength(3);
+    });
+
+    it('calls onDataChange with sorted and deduplicated data', async () => {
+        const onDataChange = vi.fn();
+        const duplicateFetchedStocks = [
+            ...mockStocks,
+            { ...mockStocks[1] } // Duplicate AAPL
+        ];
+
+        (global.fetch as any).mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ stocks: duplicateFetchedStocks }),
+        });
+
+        render(<StockTableWidget tickers="MSFT,AAPL" onDataChange={onDataChange} />);
+
+        await waitFor(() => {
+            expect(onDataChange).toHaveBeenCalled();
+        });
+
+        // Get the last call arguments
+        const lastCallArgs = onDataChange.mock.calls[onDataChange.mock.calls.length - 1][0];
+
+        expect(lastCallArgs).toHaveLength(2);
+        expect(lastCallArgs[0].ticker).toBe('AAPL');
+        expect(lastCallArgs[1].ticker).toBe('MSFT');
+    });
 });

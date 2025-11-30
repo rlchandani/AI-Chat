@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Loader2, TrendingUp, Check, X, Share2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import * as htmlToImage from 'html-to-image';
+
 import { StockUI } from '@/types/stock';
 
 // Use centralized StockUI type but alias it to StockData for local compatibility if needed,
@@ -16,24 +17,51 @@ interface StockTableWidgetProps {
   isEditable?: boolean;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void }) => void;
   initialData?: StockData[];
+  autoFetch?: boolean;
+  onDataChange?: (data: StockData[]) => void;
 }
 
-export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable = false, onRefreshStateChange, initialData }: StockTableWidgetProps) {
+export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable = false, onRefreshStateChange, initialData, onDataChange }: StockTableWidgetProps) {
   const [tickers, setTickers] = useState(initialTickers || 'AAPL,MSFT,GOOGL');
   const [isEditing, setIsEditing] = useState(false);
 
-  // Process initial data to ensure vsSpyPercent is calculated if missing
-  const processedInitialData = initialData?.map(stock => {
-    if (stock.vsSpyPercent === undefined && stock.spyYtdChangePercent !== undefined) {
-      return {
-        ...stock,
-        vsSpyPercent: stock.ytdChangePercent - stock.spyYtdChangePercent
-      };
-    }
-    return stock;
-  })?.sort((a, b) => a.ticker.localeCompare(b.ticker));
+  // Helper to process and deduplicate stock data
+  const processStocks = useCallback((data: StockData[]) => {
+    const processed = data.map(stock => {
+      if (stock.vsSpyPercent === undefined && stock.spyYtdChangePercent !== undefined) {
+        return {
+          ...stock,
+          vsSpyPercent: stock.ytdChangePercent - stock.spyYtdChangePercent
+        };
+      }
+      return stock;
+    });
 
-  const [stocks, setStocks] = useState<StockData[]>(processedInitialData || []);
+    // Deduplicate by ticker
+    const unique = Array.from(new Map(processed.map(item => [item.ticker, item])).values());
+
+    // Sort by ticker
+    return unique.sort((a, b) => a.ticker.localeCompare(b.ticker));
+  }, []);
+
+  const [stocks, setStocks] = useState<StockData[]>(() => {
+    return initialData ? processStocks(initialData) : [];
+  });
+
+  // Sync initialData when it changes
+  useEffect(() => {
+    if (initialData) {
+      setStocks(processStocks(initialData));
+    }
+  }, [initialData, processStocks]);
+
+  // Sync local data changes to parent
+  useEffect(() => {
+    if (stocks.length > 0 && onDataChange) {
+      onDataChange(stocks);
+    }
+  }, [stocks, onDataChange]);
+
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -128,7 +156,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
     return () => window.removeEventListener('stock-table-edit', handleEdit as EventListener);
   }, [isEditable]);
 
-  const fetchStocks = async (tickerList: string) => {
+  const fetchStocks = useCallback(async (tickerList: string) => {
     if (!tickerList.trim()) {
       setStocks([]);
       setLoading(false);
@@ -146,8 +174,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       }
 
       const data = await response.json();
-      const sortedStocks = (data.stocks || []).sort((a: StockData, b: StockData) => a.ticker.localeCompare(b.ticker));
-      setStocks(sortedStocks);
+      setStocks(processStocks(data.stocks || []));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load stock data');
       console.error('Stock fetch error:', err);
@@ -155,7 +182,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
     } finally {
       setLoading(false);
     }
-  };
+  }, [processStocks]);
 
   useEffect(() => {
     if (initialTickers && !hasFetchedRef.current && !initialData) {
@@ -163,7 +190,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       fetchStocks(initialTickers);
     }
 
-  }, [initialTickers, initialData]);
+  }, [initialTickers, initialData, fetchStocks]);
 
   const handleSave = () => {
     if (onUpdate) {
@@ -197,8 +224,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       }
 
       const data = await response.json();
-      const sortedStocks = (data.stocks || []).sort((a: StockData, b: StockData) => a.ticker.localeCompare(b.ticker));
-      setStocks(sortedStocks);
+      setStocks(processStocks(data.stocks || []));
       setRefreshMessage('Stock data updated successfully!');
       setTimeout(() => {
         setRefreshMessage(null);
@@ -210,7 +236,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
       setRefreshing(false);
       setLoading(false);
     }
-  }, [tickers]);
+  }, [tickers, processStocks]);
 
   // Expose refresh state to parent
   useEffect(() => {

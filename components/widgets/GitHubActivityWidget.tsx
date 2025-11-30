@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, GitBranch, GitCommit, GitPullRequest, GitMerge, AlertCircle, ExternalLink, Check, X } from 'lucide-react';
+import { Loader2, GitBranch, GitCommit, GitPullRequest, AlertCircle, ExternalLink, Check, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface GitHubActivityWidgetProps {
@@ -9,6 +9,9 @@ interface GitHubActivityWidgetProps {
   onUpdate?: (username: string) => void;
   isEditable?: boolean;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void }) => void;
+  autoFetch?: boolean;
+  onDataChange?: (data: GitHubData) => void;
+  initialData?: GitHubData | null;
 }
 
 interface GitHubUser {
@@ -38,21 +41,38 @@ interface GitHubEvent {
   };
 }
 
-interface GitHubData {
+interface ContributionDay {
+  date: string;
+  contributionCount: number;
+  color: string;
+}
+
+interface ContributionWeek {
+  contributionDays: ContributionDay[];
+}
+
+
+
+
+
+export interface GitHubData {
   user: GitHubUser;
   events: GitHubEvent[];
+  contributions: ContributionWeek[];
   stats: {
-    totalCommits: number;
-    totalPRs: number;
-    totalIssues: number;
+    totalContributions: number;
+    currentStreak: number;
+    longestStreak: number;
   };
 }
 
-export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEditable = false, onRefreshStateChange }: GitHubActivityWidgetProps) {
+
+
+export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEditable = false, onRefreshStateChange, autoFetch = true, onDataChange, initialData }: GitHubActivityWidgetProps) {
   const [username, setUsername] = useState(initialUsername || 'rlchandani');
   const [isEditing, setIsEditing] = useState(false);
-  const [githubData, setGithubData] = useState<GitHubData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [githubData, setGithubData] = useState<GitHubData | null>(initialData || null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
@@ -60,7 +80,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
 
   // Listen for edit events from widget header
   useEffect(() => {
-    const handleEdit = (e: CustomEvent) => {
+    const handleEdit = () => {
       if (isEditable) {
         setIsEditing(true);
       }
@@ -88,6 +108,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
 
       const data = await response.json();
       setGithubData(data);
+      if (onDataChange) onDataChange(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load GitHub data');
       console.error('GitHub fetch error:', err);
@@ -98,12 +119,11 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
   };
 
   useEffect(() => {
-    if (initialUsername && !hasFetchedRef.current) {
+    if (autoFetch && initialUsername && !hasFetchedRef.current) {
       hasFetchedRef.current = true;
       fetchGitHubData(initialUsername);
     }
-
-  }, [initialUsername]);
+  }, [autoFetch, initialUsername]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -125,6 +145,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
 
       const data = await response.json();
       setGithubData(data);
+      if (onDataChange) onDataChange(data);
       setRefreshMessage('GitHub data updated successfully!');
       setTimeout(() => {
         setRefreshMessage(null);
@@ -136,7 +157,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
       setRefreshing(false);
       setLoading(false);
     }
-  }, [username]);
+  }, [username, onDataChange]);
 
   // Expose refresh state to parent
   useEffect(() => {
@@ -270,7 +291,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
     return null;
   }
 
-  const { user, events, stats } = githubData;
+  const { user, events } = githubData;
 
   return (
     <div className="w-full h-full rounded-2xl border border-border bg-transparent dark:bg-transparent shadow-sm dark:shadow-md p-4 flex flex-col relative group">

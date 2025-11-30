@@ -46,3 +46,7 @@ node_modules.nosync
 # firebase
 .firebase/
 firebase-debug.log
+
+# editor config
+.kiro
+.vscode

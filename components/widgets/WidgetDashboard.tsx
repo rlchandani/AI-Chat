@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, memo, useCallback, type ComponentType, type ReactNode, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+
 import {
   DndContext,
   DragEndEvent,
+  DragOverEvent,
   DragStartEvent,
   DragOverlay,
   MouseSensor,
@@ -18,12 +20,11 @@ import {
 import {
   SortableContext,
   useSortable,
-  verticalListSortingStrategy,
+  rectSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  LayoutGrid,
   Puzzle,
   Search,
   TrendingUp,
@@ -43,14 +44,17 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
+
 import { StockQuoteCard } from '@/components/chat/StockQuoteCard';
-import { WeatherCard } from '@/components/chat/WeatherCard';
+import { WeatherCard, type WeatherData } from '@/components/chat/WeatherCard';
 import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { Settings } from '@/components/chat/Settings';
+import { type StockUI } from '@/types/stock';
 import { LocationAutocomplete } from './LocationAutocomplete';
 import { StockTableWidget } from './StockTableWidget';
 import { ClockWidget } from './ClockWidget';
-import { GitHubActivityWidget } from './GitHubActivityWidget';
+import { GitHubActivityWidget, type GitHubData } from './GitHubActivityWidget';
+import { WidgetCardFrame } from './WidgetCardFrame';
 
 const STORAGE_KEY = 'widget-dashboard-state';
 
@@ -63,7 +67,7 @@ const DEFAULT_WIDGETS = [
   { id: 'notes-demo', type: 'notes', width: FIXED_WIDGET_WIDTH },
 ] as const;
 
-type WidgetType = 'stock' | 'stock-table' | 'weather' | 'notes' | 'clock' | 'github';
+export type WidgetType = 'stock' | 'stock-table' | 'weather' | 'notes' | 'clock' | 'github';
 
 type WidgetDefinition = {
   type: WidgetType;
@@ -73,7 +77,7 @@ type WidgetDefinition = {
   accent: string;
 };
 
-type WidgetInstance = {
+export type WidgetInstance = {
   id: string;
   type: WidgetType;
   width: number;
@@ -87,6 +91,8 @@ type WidgetInstance = {
     username?: string; // For GitHub widget
   };
 };
+
+type WidgetData = StockUI | WeatherData | StockUI[] | GitHubData | Record<string, unknown>;
 
 const WIDGET_LIBRARY: WidgetDefinition[] = [
   {
@@ -142,15 +148,55 @@ const SIZE_PRESETS: Record<WidgetType, { width: number }> = {
   github: { width: FIXED_WIDGET_WIDTH },
 };
 
+
+
 export function WidgetDashboard() {
-  const [widgets, setWidgets] = useState<WidgetInstance[]>([...DEFAULT_WIDGETS]);
+  // Use lazy initialization to prevent recreating default widgets on every render
+  const [widgets, setWidgets] = useState<WidgetInstance[]>(() => {
+    // Check if we're on the client side (typeof window !== 'undefined')
+    if (typeof window === 'undefined') {
+      return [...DEFAULT_WIDGETS];
+    }
+
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as WidgetInstance[];
+        if (Array.isArray(parsed) && parsed.length) {
+          // Migrate widget widths to fixed defaults while preserving all config
+          const migrated = parsed.map((widget) => ({
+            ...widget,
+            width: FIXED_WIDGET_WIDTH,
+            // Preserve height if it exists, otherwise let it auto-size
+          }));
+          return migrated;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load widget layout', error);
+    }
+    // Return fresh copy of defaults only if nothing was loaded
+    return [...DEFAULT_WIDGETS];
+  });
+
   const [loaded, setLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [activeDrag, setActiveDrag] = useState<{
     id?: string;
     type: WidgetType;
+    widget?: WidgetInstance;
+    from?: 'board' | 'library';
+    data?: WidgetData; // Cache for drag preview data
   } | null>(null);
+  const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+
+  // Ref to store latest data for each widget to avoid re-renders but persist data during drag
+  const widgetDataRef = useRef<Record<string, WidgetData>>({});
+
+  const handleDataChange = useCallback((id: string, data: WidgetData) => {
+    widgetDataRef.current[id] = data;
+  }, []);
   const pathname = usePathname();
 
   const sensors = useSensors(
@@ -161,30 +207,20 @@ export function WidgetDashboard() {
   const { setNodeRef: setBoardRef, isOver: isBoardOver } = useDroppable({ id: 'widget-board' });
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as WidgetInstance[];
-        if (Array.isArray(parsed) && parsed.length) {
-          // Migrate old widget sizes to new defaults
-          const migrated = parsed.map((widget) => {
-            // Update all widgets to use fixed width and remove height (auto-size)
-            const { height, ...rest } = widget;
-            return { ...rest, width: FIXED_WIDGET_WIDTH };
-          });
-          setWidgets(migrated);
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to load widget layout', error);
-    } finally {
-      setLoaded(true);
-    }
+    // Defer loading state to next tick to avoid synchronous setState warning
+    const timer = setTimeout(() => setLoaded(true), 0);
+    return () => clearTimeout(timer);
   }, []);
 
+  // Debounced localStorage save to avoid excessive writes during drag operations
   useEffect(() => {
-    if (!loaded) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(widgets));
+    if (!loaded || typeof window === 'undefined') return;
+
+    const timeoutId = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(widgets));
+    }, 500); // Wait 500ms after last change before saving
+
+    return () => clearTimeout(timeoutId);
   }, [widgets, loaded]);
 
   const filteredLibrary = useMemo(() => {
@@ -216,6 +252,8 @@ export function WidgetDashboard() {
     setWidgets((prev) => [...prev, newWidget]);
   };
 
+
+
   const handleDragStart = (event: DragStartEvent) => {
     const origin = event.active.data.current?.from as 'library' | 'board' | undefined;
     if (!origin) return;
@@ -223,13 +261,53 @@ export function WidgetDashboard() {
     if (origin === 'library') {
       const widgetType = event.active.data.current?.widgetType as WidgetType | undefined;
       if (widgetType) {
-        setActiveDrag({ id: undefined, type: widgetType });
+        setActiveDrag({
+          id: undefined,
+          type: widgetType,
+          from: 'library',
+          data: undefined
+        });
       }
     } else {
+      // Dragging from board - store full widget object for DragOverlay clone
       const current = widgets.find((w) => w.id === event.active.id);
       if (current) {
-        setActiveDrag({ id: current.id, type: current.type });
+        setActiveDrag({
+          id: current.id,
+          type: current.type,
+          widget: current, // Store full widget for DragOverlay
+          from: 'board',
+          data: widgetDataRef.current[current.id] // Pass cached data to preview
+        });
       }
+    }
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id;
+    const overId = over.id;
+
+    if (activeId === overId) return;
+
+    const isActiveTask = active.data.current?.from === 'board';
+    const isOverTask = over.data.current?.from === 'board';
+
+    if (!isActiveTask) return;
+
+    // Implements sortable drag over logic
+    if (isActiveTask && isOverTask) {
+      setWidgets((items) => {
+        const oldIndex = items.findIndex((item) => item.id === activeId);
+        const newIndex = items.findIndex((item) => item.id === overId);
+
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          return arrayMove(items, oldIndex, newIndex);
+        }
+        return items;
+      });
     }
   };
 
@@ -244,23 +322,20 @@ export function WidgetDashboard() {
     if (activeFrom === 'library' && (over.id === 'widget-board' || overFrom === 'board')) {
       const widgetType = active.data.current?.widgetType as WidgetType;
       if (widgetType) handleAddWidget(widgetType);
-      return;
     }
 
-    if (activeFrom === 'board' && over.id !== 'widget-board') {
-      const oldIndex = widgets.findIndex((w) => w.id === active.id);
-      const newIndex = widgets.findIndex((w) => w.id === over.id);
-      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        setWidgets((items) => arrayMove(items, oldIndex, newIndex));
-      }
-    }
+    // Clear drag direction after animation completes (400ms for vertical, 300ms for horizontal)
+    const clearDelay = dragDirection === 'vertical' ? 450 : 350;
+    setTimeout(() => {
+      setDragDirection(null);
+    }, clearDelay);
   };
 
-  const handleRemove = (id: string) => {
+  const handleRemove = useCallback((id: string) => {
     setWidgets((items) => items.filter((widget) => widget.id !== id));
-  };
+  }, []);
 
-  const handleUpdateWidget = (id: string, config: Partial<WidgetInstance['config']>) => {
+  const handleUpdateWidget = useCallback((id: string, config: Partial<WidgetInstance['config']>) => {
     setWidgets((items) =>
       items.map((widget) =>
         widget.id === id
@@ -274,7 +349,9 @@ export function WidgetDashboard() {
           : widget
       )
     );
-  };
+  }, []);
+
+
 
   if (!loaded) {
     return (
@@ -353,6 +430,7 @@ export function WidgetDashboard() {
         <DndContext
           sensors={sensors}
           onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
           <div
@@ -367,41 +445,45 @@ export function WidgetDashboard() {
                 Drag widgets from the library to get started
               </div>
             ) : (
-              <SortableContext items={widgets.map((w) => w.id)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={widgets.map((w) => w.id)} strategy={rectSortingStrategy}>
                 <div className="grid grid-cols-3 gap-4 auto-rows-max">
-                  {widgets.map((widget) => (
-                    <SortableWidgetCard
+                  {widgets.map((widget, index) =>
+                    <MemoizedSortableWidgetCard
                       key={widget.id}
                       widget={widget}
                       onRemove={handleRemove}
                       onUpdate={handleUpdateWidget}
+                      onDataChange={handleDataChange}
+                      dragDirection={dragDirection}
+                      itemIndex={index}
                     />
-                  ))}
+                  )}
                 </div>
               </SortableContext>
             )}
           </div>
 
-          <DragOverlay>
+          <DragOverlay dropAnimation={{
+            duration: 250,
+            easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+          }}>
             {activeDrag ? (
-              <div className="pointer-events-none opacity-90" style={{ width: FIXED_WIDGET_WIDTH }}>
-                <div className="rounded-2xl border border-primary/40 bg-card shadow-2xl overflow-hidden">
-                  <div className="px-4 py-2 border-b border-border text-xs font-semibold uppercase tracking-wide text-primary">
-                    {WIDGET_LIBRARY.find((w) => w.type === activeDrag.type)?.name ?? activeDrag.type}
-                  </div>
-                  <div className="p-4 bg-background/80">
-                    <WidgetPreview
-                      type={activeDrag.type}
-                      widget={{
-                        id: '',
-                        type: activeDrag.type,
-                        width: SIZE_PRESETS[activeDrag.type]?.width || FIXED_WIDGET_WIDTH,
-                        config: activeDrag.type === 'stock-table' ? { tickers: 'AAPL,MSFT,GOOGL' } : undefined
-                      }}
-                      onUpdate={() => { }}
-                    />
-                  </div>
-                </div>
+              <div className="cursor-grabbing shadow-2xl scale-105" style={{ width: FIXED_WIDGET_WIDTH }}>
+                {activeDrag.widget ? (
+                  // Dragging from board - show clone of actual widget (no API calls)
+                  <DragPreview widget={activeDrag.widget} initialData={activeDrag.data} />
+                ) : (
+                  // Dragging from library - show placeholder with default config
+                  <DragPreview
+                    widget={{
+                      id: 'temp-drag',
+                      type: activeDrag.type,
+                      width: SIZE_PRESETS[activeDrag.type]?.width || FIXED_WIDGET_WIDTH,
+                      config: activeDrag.type === 'stock-table' ? { tickers: 'AAPL,MSFT,GOOGL' } : undefined
+                    }}
+                    initialData={activeDrag.data}
+                  />
+                )}
               </div>
             ) : null}
           </DragOverlay>
@@ -465,12 +547,17 @@ function SortableWidgetCard({
   widget,
   onRemove,
   onUpdate,
+  onDataChange,
+  dragDirection,
 }: {
   widget: WidgetInstance;
   onRemove: (id: string) => void;
   onUpdate: (id: string, config: Partial<WidgetInstance['config']>) => void;
+  onDataChange: (id: string, data: WidgetData) => void;
+  dragDirection?: 'horizontal' | 'vertical' | null;
+  itemIndex?: number;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, isDragging, isOver } = useSortable({
     id: widget.id,
     data: { from: 'board' },
   });
@@ -482,11 +569,26 @@ function SortableWidgetCard({
   } | null>(null);
   const [editTrigger, setEditTrigger] = useState(0);
 
+  // Adaptive transition timing based on drag direction
+  // Horizontal drags: 300ms (shorter distance)
+  // Vertical drags: 400ms (longer distance)
+  const adaptiveTransition = isDragging
+    ? 'none'
+    : dragDirection === 'vertical'
+      ? 'all 400ms cubic-bezier(0.16, 1, 0.3, 1)' // Bouncy spring for multi-row
+      : 'all 300ms cubic-bezier(0.34, 1.56, 0.64, 1)'; // Snappy for same-row
+
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? 'none' : adaptiveTransition,
     width: widget.width,
-  };
+    zIndex: isDragging ? 50 : 'auto',
+    position: isDragging ? 'relative' : undefined,
+  } as React.CSSProperties;
+
+  const placeholderStyle = {
+    width: widget.width,
+  } as React.CSSProperties;
 
   const handleDeleteClick = () => {
     setShowConfirmDialog(true);
@@ -501,101 +603,110 @@ function SortableWidgetCard({
     setShowConfirmDialog(false);
   };
 
+  const headerActions = (
+    <>
+      {/* Refresh button and status - only for stock, weather, stock-table, and github widgets */}
+      {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && refreshState && (
+        <>
+          <AnimatePresence>
+            {refreshState.refreshing && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Loader2 className="w-3 h-3 animate-spin text-foreground/70" />
+              </motion.div>
+            )}
+            {refreshState.refreshMessage && !refreshState.refreshing && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="w-2 h-2 rounded-full bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                title={refreshState.refreshMessage}
+              />
+            )}
+          </AnimatePresence>
+          <button
+            type="button"
+            onClick={refreshState.onRefresh}
+            disabled={refreshState.refreshing}
+            className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Refresh data"
+            title="Refresh data"
+          >
+            <RefreshCw
+              size={14}
+              className={refreshState.refreshing ? 'animate-spin' : ''}
+            />
+          </button>
+        </>
+      )}
+      {/* Edit button - only for editable widgets */}
+      {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && (
+        <button
+          type="button"
+          onClick={() => setEditTrigger(prev => prev + 1)}
+          className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+          aria-label="Edit widget"
+          title="Edit widget"
+        >
+          <Edit2 size={14} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={handleDeleteClick}
+        className="p-1.5 rounded-full hover:bg-destructive/20 active:bg-destructive/30 text-muted-foreground hover:text-destructive active:text-destructive transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+        aria-label="Remove widget"
+      >
+        <Trash2 size={14} />
+      </button>
+      <button
+        type="button"
+        className="p-1.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition"
+        {...attributes}
+        {...listeners}
+        aria-label="Drag widget"
+      >
+        <GripVertical size={16} />
+      </button>
+    </>
+  );
+
+  const handleWidgetDataChange = useCallback((data: WidgetData) => {
+    onDataChange(widget.id, data);
+  }, [widget.id, onDataChange]);
+
   return (
     <>
       <div
         ref={setNodeRef}
-        style={style}
+        style={placeholderStyle}
         className={clsx(
-          'rounded-2xl border border-border bg-card shadow-md overflow-hidden flex flex-col h-auto group',
-          isDragging ? 'opacity-80 scale-[1.01]' : 'opacity-100',
-          isOver ? 'ring-2 ring-primary/40 border-primary/30' : undefined,
+          'rounded-2xl flex flex-col h-auto group relative transition-all duration-200',
+          isDragging && 'border-2 border-dashed border-primary/30 bg-primary/5',
+          !isDragging && 'border border-transparent'
         )}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/40">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {widget.type.toUpperCase()}
-          </p>
-          <div className="flex items-center gap-2">
-            {/* Refresh button and status - only for stock, weather, stock-table, and github widgets */}
-            {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && refreshState && (
-              <>
-                <AnimatePresence>
-                  {refreshState.refreshing && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Loader2 className="w-3 h-3 animate-spin text-foreground/70" />
-                    </motion.div>
-                  )}
-                  {refreshState.refreshMessage && !refreshState.refreshing && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      className="w-2 h-2 rounded-full bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title={refreshState.refreshMessage}
-                    />
-                  )}
-                </AnimatePresence>
-                <button
-                  type="button"
-                  onClick={refreshState.onRefresh}
-                  disabled={refreshState.refreshing}
-                  className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  aria-label="Refresh data"
-                  title="Refresh data"
-                >
-                  <RefreshCw
-                    size={14}
-                    className={refreshState.refreshing ? 'animate-spin' : ''}
-                  />
-                </button>
-              </>
-            )}
-            {/* Edit button - only for editable widgets */}
-            {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && (
-              <button
-                type="button"
-                onClick={() => setEditTrigger(prev => prev + 1)}
-                className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
-                aria-label="Edit widget"
-                title="Edit widget"
-              >
-                <Edit2 size={14} />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleDeleteClick}
-              className="p-1.5 rounded-full hover:bg-destructive/20 active:bg-destructive/30 text-muted-foreground hover:text-destructive active:text-destructive transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
-              aria-label="Remove widget"
-            >
-              <Trash2 size={14} />
-            </button>
-            <button
-              type="button"
-              className="p-1.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition"
-              {...attributes}
-              {...listeners}
-              aria-label="Drag widget"
-            >
-              <GripVertical size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="p-4 flex-1 min-h-0">
+        <WidgetCardFrame
+          title={widget.type.toUpperCase()}
+          headerActions={headerActions}
+          style={style}
+          className={isDragging ? 'opacity-0' : ''}
+          isOver={isOver}
+        >
           <WidgetPreview
             type={widget.type}
             widget={widget}
             onUpdate={onUpdate}
+            onDataChange={handleWidgetDataChange}
             onRefreshStateChange={setRefreshState}
             editTrigger={editTrigger}
           />
-        </div>
+        </WidgetCardFrame>
       </div>
 
       {/* Confirmation Dialog */}
@@ -611,6 +722,52 @@ function SortableWidgetCard({
     </>
   );
 }
+
+
+
+// Memoize the SortableWidgetCard with custom comparison to prevent re-renders
+// when widget data hasn't actually changed (only reference changed)
+const MemoizedSortableWidgetCard = memo(
+  SortableWidgetCard,
+  (prevProps, nextProps) => {
+    // Return true if props are equal (DON'T re-render)
+    // Return false if props are different (DO re-render)
+
+    // Check if widget id and type are the same
+    if (prevProps.widget.id !== nextProps.widget.id ||
+      prevProps.widget.type !== nextProps.widget.type) {
+      return false; // Props changed, re-render
+    }
+
+    // Check if widget config changed
+    const prevConfig = JSON.stringify(prevProps.widget.config || {});
+    const nextConfig = JSON.stringify(nextProps.widget.config || {});
+    if (prevConfig !== nextConfig) {
+      return false; // Config changed, re-render
+    }
+
+    // Check if width changed
+    if (prevProps.widget.width !== nextProps.widget.width) {
+      return false; // Width changed, re-render
+    }
+
+    // Check if drag-related props changed
+    if (prevProps.dragDirection !== nextProps.dragDirection ||
+      prevProps.itemIndex !== nextProps.itemIndex) {
+      return false; // Drag props changed, re-render
+    }
+
+    // Check if callbacks changed
+    if (prevProps.onRemove !== nextProps.onRemove ||
+      prevProps.onUpdate !== nextProps.onUpdate ||
+      prevProps.onDataChange !== nextProps.onDataChange) {
+      return false; // Callbacks changed, re-render
+    }
+
+    // All props are equivalent, skip re-render
+    return true;
+  }
+);
 
 function DeleteConfirmationDialog({
   widgetType,
@@ -690,26 +847,50 @@ function DeleteConfirmationDialog({
   );
 }
 
+
+
+function DragPreview({ widget, initialData }: { widget: WidgetInstance; initialData?: WidgetData }) {
+  return (
+    <WidgetCardFrame
+      title={widget.type.toUpperCase()}
+    >
+      <WidgetPreview
+        type={widget.type}
+        widget={widget}
+        onUpdate={() => { }}
+        isDragPreview={true}
+        initialData={initialData}
+      />
+    </WidgetCardFrame>
+  );
+}
+
 function WidgetPreview({
   type,
   widget,
   onUpdate,
+  onDataChange,
   onRefreshStateChange,
   editTrigger,
+  isDragPreview = false,
+  initialData,
 }: {
   type: WidgetType;
   widget: WidgetInstance;
   onUpdate: (id: string, config: Partial<WidgetInstance['config']>) => void;
+  onDataChange?: (data: WidgetData) => void;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void } | null) => void;
   editTrigger?: number;
+  isDragPreview?: boolean;
+  initialData?: WidgetData;
 }) {
   switch (type) {
     case 'stock':
-      return <EditableStockWidget widget={widget} onUpdate={onUpdate} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} />;
+      return <EditableStockWidget widget={widget} onUpdate={onUpdate} onDataChange={onDataChange} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} isDragPreview={isDragPreview} initialData={initialData} />;
     case 'stock-table':
-      return <EditableStockTableWidget widget={widget} onUpdate={onUpdate} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} />;
+      return <EditableStockTableWidget widget={widget} onUpdate={onUpdate} onDataChange={onDataChange} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} isDragPreview={isDragPreview} initialData={initialData} />;
     case 'weather':
-      return <EditableWeatherWidget widget={widget} onUpdate={onUpdate} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} />;
+      return <EditableWeatherWidget widget={widget} onUpdate={onUpdate} onDataChange={onDataChange} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} isDragPreview={isDragPreview} initialData={initialData} />;
     case 'notes':
       return (
         <div className="space-y-3 text-sm">
@@ -735,7 +916,7 @@ function WidgetPreview({
     case 'clock':
       return <ClockWidget />;
     case 'github':
-      return <EditableGitHubWidget widget={widget} onUpdate={onUpdate} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} />;
+      return <EditableGitHubWidget widget={widget} onUpdate={onUpdate} onDataChange={onDataChange} onRefreshStateChange={onRefreshStateChange} editTrigger={editTrigger} isDragPreview={isDragPreview} initialData={initialData} />;
     default:
       return null;
   }
@@ -744,17 +925,30 @@ function WidgetPreview({
 function EditableStockTableWidget({
   widget,
   onUpdate,
+  onDataChange,
   onRefreshStateChange,
   editTrigger,
+  isDragPreview = false,
+  initialData,
 }: {
   widget: WidgetInstance;
   onUpdate: (id: string, config: Partial<WidgetInstance['config']>) => void;
+  onDataChange?: (data: WidgetData) => void;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void } | null) => void;
   editTrigger?: number;
+  isDragPreview?: boolean;
+  initialData?: WidgetData;
 }) {
+  // Use useMemo to prevent StockTableWidget from remounting when widget reference changes
+  const stableTickers = useMemo(() => widget.config?.tickers || 'AAPL,MSFT,GOOGL', [widget.config?.tickers]);
+
+  // Track the last processed edit trigger to prevent re-entering edit mode on remount
+  const lastProcessedTrigger = useRef(editTrigger || 0);
+
   // Trigger edit mode when editTrigger changes
   useEffect(() => {
-    if (editTrigger && editTrigger > 0) {
+    if (editTrigger && editTrigger > lastProcessedTrigger.current) {
+      lastProcessedTrigger.current = editTrigger;
       // The StockTableWidget handles its own edit state, so we need to trigger it
       // We'll use a ref or state to communicate with it
       const editEvent = new CustomEvent('stock-table-edit', { detail: { widgetId: widget.id } });
@@ -765,10 +959,13 @@ function EditableStockTableWidget({
   return (
     <div className="w-full h-full relative group">
       <StockTableWidget
-        tickers={widget.config?.tickers || 'AAPL,MSFT,GOOGL'}
+        tickers={stableTickers}
         onUpdate={(tickers) => onUpdate(widget.id, { tickers })}
         isEditable={true}
         onRefreshStateChange={onRefreshStateChange}
+        autoFetch={!isDragPreview}
+        onDataChange={onDataChange as ((data: StockUI[]) => void) | undefined}
+        initialData={initialData as StockUI[] | undefined}
       />
     </div>
   );
@@ -777,21 +974,37 @@ function EditableStockTableWidget({
 function EditableStockWidget({
   widget,
   onUpdate,
+  onDataChange,
   onRefreshStateChange,
   editTrigger,
+  isDragPreview = false,
+  initialData,
 }: {
   widget: WidgetInstance;
   onUpdate: (id: string, config: Partial<WidgetInstance['config']>) => void;
+  onDataChange?: (data: WidgetData) => void;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void } | null) => void;
   editTrigger?: number;
+  isDragPreview?: boolean;
+  initialData?: WidgetData;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [ticker, setTicker] = useState(widget.config?.ticker || 'AAPL');
 
+  // Use useMemo to prevent StockQuoteCard from remounting when widget reference changes
+  // Only update when the actual ticker value changes
+  const stableTicker = useMemo(() => widget.config?.ticker || 'AAPL', [widget.config?.ticker]);
+
+  // Track the last processed edit trigger to prevent re-entering edit mode on remount
+  const lastProcessedTrigger = useRef(editTrigger || 0);
+
   // Trigger edit mode when editTrigger changes
   useEffect(() => {
-    if (editTrigger && editTrigger > 0) {
-      setIsEditing(true);
+    if (editTrigger && editTrigger > lastProcessedTrigger.current) {
+      lastProcessedTrigger.current = editTrigger;
+      // Defer state update to avoid synchronous setState warning
+      const timer = setTimeout(() => setIsEditing(true), 0);
+      return () => clearTimeout(timer);
     }
   }, [editTrigger]);
 
@@ -851,9 +1064,11 @@ function EditableStockWidget({
   return (
     <div className="w-full h-full relative group">
       <StockQuoteCard
-        ticker={widget.config?.ticker || 'AAPL'}
-        autoFetch={true}
+        ticker={stableTicker}
+        autoFetch={!isDragPreview}
         onRefreshStateChange={onRefreshStateChange}
+        onDataChange={onDataChange as ((data: StockUI) => void) | undefined}
+        initialData={initialData as StockUI | null | undefined}
       />
     </div>
   );
@@ -862,22 +1077,38 @@ function EditableStockWidget({
 function EditableWeatherWidget({
   widget,
   onUpdate,
+  onDataChange,
   onRefreshStateChange,
   editTrigger,
+  isDragPreview = false,
+  initialData,
 }: {
   widget: WidgetInstance;
   onUpdate: (id: string, config: Partial<WidgetInstance['config']>) => void;
+  onDataChange?: (data: WidgetData) => void;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void } | null) => void;
   editTrigger?: number;
+  isDragPreview?: boolean;
+  initialData?: WidgetData;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [location, setLocation] = useState(widget.config?.location || 'San Francisco, CA');
   const [unitType, setUnitType] = useState<'imperial' | 'metric'>(widget.config?.unitType || 'imperial');
 
+  // Use useMemo to prevent WeatherCard from remounting when widget reference changes
+  const stableLocation = useMemo(() => widget.config?.location || 'San Francisco, CA', [widget.config?.location]);
+  const stableUnitType = useMemo(() => widget.config?.unitType || ('imperial' as const), [widget.config?.unitType]);
+
+  // Track the last processed edit trigger to prevent re-entering edit mode on remount
+  const lastProcessedTrigger = useRef(editTrigger || 0);
+
   // Trigger edit mode when editTrigger changes
   useEffect(() => {
-    if (editTrigger && editTrigger > 0) {
-      setIsEditing(true);
+    if (editTrigger && editTrigger > lastProcessedTrigger.current) {
+      lastProcessedTrigger.current = editTrigger;
+      // Defer state update to avoid synchronous setState warning
+      const timer = setTimeout(() => setIsEditing(true), 0);
+      return () => clearTimeout(timer);
     }
   }, [editTrigger]);
 
@@ -959,13 +1190,15 @@ function EditableWeatherWidget({
   return (
     <div className="w-full h-full relative group">
       <WeatherCard
-        location={widget.config?.location || 'San Francisco, CA'}
-        autoFetch={true}
+        location={stableLocation}
+        autoFetch={!isDragPreview}
         onRefreshStateChange={onRefreshStateChange}
         useAutoLocation={widget.config?.useAutoLocation || false}
-        unitType={widget.config?.unitType || 'imperial'}
+        unitType={stableUnitType}
         onLocationChange={handleLocationChange}
         onAutoLocationChange={handleAutoLocationChange}
+        onDataChange={onDataChange as ((data: WeatherData) => void) | undefined}
+        initialData={initialData as WeatherData | null | undefined}
       />
     </div>
   );
@@ -974,17 +1207,30 @@ function EditableWeatherWidget({
 function EditableGitHubWidget({
   widget,
   onUpdate,
+  onDataChange,
   onRefreshStateChange,
   editTrigger,
+  isDragPreview = false,
+  initialData,
 }: {
   widget: WidgetInstance;
   onUpdate: (id: string, config: Partial<WidgetInstance['config']>) => void;
+  onDataChange?: (data: WidgetData) => void;
   onRefreshStateChange?: (state: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void } | null) => void;
   editTrigger?: number;
+  isDragPreview?: boolean;
+  initialData?: WidgetData;
 }) {
+  // Use useMemo to prevent GitHubActivityWidget from remounting when widget reference changes
+  const stableUsername = useMemo(() => widget.config?.username || 'rlchandani', [widget.config?.username]);
+
+  // Track the last processed edit trigger to prevent re-entering edit mode on remount
+  const lastProcessedTrigger = useRef(editTrigger || 0);
+
   // Trigger edit mode when editTrigger changes
   useEffect(() => {
-    if (editTrigger && editTrigger > 0) {
+    if (editTrigger && editTrigger > lastProcessedTrigger.current) {
+      lastProcessedTrigger.current = editTrigger;
       // The GitHubActivityWidget handles its own edit state, so we need to trigger it
       const editEvent = new CustomEvent('github-edit', { detail: { widgetId: widget.id } });
       window.dispatchEvent(editEvent);
@@ -994,10 +1240,13 @@ function EditableGitHubWidget({
   return (
     <div className="w-full h-full relative group">
       <GitHubActivityWidget
-        username={widget.config?.username || 'rlchandani'}
+        username={stableUsername}
         onUpdate={(username) => onUpdate(widget.id, { username })}
         isEditable={true}
         onRefreshStateChange={onRefreshStateChange}
+        autoFetch={!isDragPreview}
+        onDataChange={onDataChange as ((data: GitHubData) => void) | undefined}
+        initialData={initialData as GitHubData | null | undefined}
       />
     </div>
   );
