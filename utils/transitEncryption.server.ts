@@ -47,7 +47,7 @@ export async function getServerKeyPair(): Promise<{
   privateKey: CryptoKey;
 }> {
   const now = Date.now();
-  
+
   // Return cached key if still valid
   if (serverKeyPairCache && serverKeyPairCache.expiresAt > now) {
     return {
@@ -82,7 +82,7 @@ export async function getServerKeyPair(): Promise<{
       publicKey: publicKeyBase64,
       privateKey: keyPair.privateKey,
     };
-  } catch (error) {
+  } catch {
     throw new TransitEncryptionError(
       'Failed to generate server key pair',
       ERROR_CODES.KEY_GENERATION_FAILED
@@ -149,7 +149,7 @@ export async function deriveSharedSecret(
     );
 
     return aesKey;
-  } catch (error) {
+  } catch {
     throw new TransitEncryptionError(
       'Failed to derive shared secret',
       ERROR_CODES.DECRYPTION_FAILED
@@ -211,7 +211,7 @@ export async function decryptFromTransit(
     if (error instanceof TransitEncryptionError) {
       throw error;
     }
-    
+
     // Check if it's an authentication error
     if (error instanceof Error && error.message.includes('authentication')) {
       throw new TransitEncryptionError(

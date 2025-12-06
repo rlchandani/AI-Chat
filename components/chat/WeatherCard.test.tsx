@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { WeatherCard } from './WeatherCard';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
@@ -53,10 +53,11 @@ describe('WeatherCard', () => {
     });
 
     it('renders data correctly after fetch', async () => {
-        (global.fetch as any).mockResolvedValue({
+        const mockFetch = vi.fn().mockResolvedValue({
             ok: true,
             json: async () => mockWeatherData,
         });
+        global.fetch = mockFetch;
 
         render(<WeatherCard location="San Francisco" autoFetch={true} />);
 
@@ -70,9 +71,10 @@ describe('WeatherCard', () => {
     });
 
     it('displays error message on fetch failure', async () => {
-        (global.fetch as any).mockResolvedValue({
+        const mockFetch = vi.fn().mockResolvedValue({
             ok: false,
         });
+        global.fetch = mockFetch;
 
         render(<WeatherCard location="San Francisco" autoFetch={true} />);
 
@@ -91,10 +93,11 @@ describe('WeatherCard', () => {
 
     it('calls onDataChange with fetched data', async () => {
         const onDataChange = vi.fn();
-        (global.fetch as any).mockResolvedValue({
+        const mockFetch = vi.fn().mockResolvedValue({
             ok: true,
             json: async () => mockWeatherData,
         });
+        global.fetch = mockFetch;
 
         render(<WeatherCard location="San Francisco" onDataChange={onDataChange} autoFetch={true} />);
 
@@ -116,10 +119,11 @@ describe('WeatherCard', () => {
         // Let's verify it calls fetch with new location when props change if we were to simulate that, 
         // but simpler is to test if it respects the location prop for fetching.
 
-        (global.fetch as any).mockResolvedValueOnce({
+        const mockFetch = vi.fn().mockResolvedValueOnce({
             ok: true,
             json: async () => ({ ...mockWeatherData, location: 'New York' }),
         });
+        global.fetch = mockFetch;
 
         // Re-render with new location to trigger effect
         render(<WeatherCard location="New York" autoFetch={true} />);

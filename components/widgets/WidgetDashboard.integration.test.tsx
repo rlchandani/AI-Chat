@@ -159,11 +159,25 @@ describe('Integration Tests: Final Polish and Verification', () => {
 
       // Step 1: Start drag from board
       const activeIndex = 0;
-      const dragState = {
+      let dragState: {
+        activeId: string | null;
+        type: WidgetType | null;
+        activeIndex: number;
+        origin: 'board' | 'library' | null;
+      } = {
         activeId: 'w1',
         type: 'stock' as WidgetType,
         activeIndex,
         origin: 'board' as const,
+      };
+
+      const handleDragCancel = () => {
+        dragState = {
+          activeId: null,
+          type: null,
+          activeIndex: -1,
+          origin: null,
+        };
       };
 
       expect(dragState.origin).toBe('board');
@@ -285,12 +299,12 @@ describe('Integration Tests: Final Polish and Verification', () => {
         { id: 'w1', type: 'stock', width: FIXED_WIDGET_WIDTH, config: { ticker: 'AAPL' } },
       ];
 
-      const handleDataChange = (id: string, data: any) => {
+      const handleDataChange = (id: string, data: unknown) => {
         const widgetIndex = widgets.findIndex(w => w.id === id);
         if (widgetIndex !== -1) {
           // In a real app, we'd update state here. For test, we just verify callback.
           expect(id).toBe('w1');
-          expect(data.price).toBe(150);
+          expect((data as { price: number }).price).toBe(150);
         }
       };
 
@@ -549,7 +563,7 @@ describe('Integration Tests: Final Polish and Verification', () => {
 
       try {
         widgets = JSON.parse(localStorage.getItem('widget-dashboard-state') || '[]');
-      } catch (error) {
+      } catch {
         useFallback = true;
         widgets = [
           { id: 'stock-demo', type: 'stock', width: FIXED_WIDGET_WIDTH },
@@ -732,8 +746,8 @@ describe('Integration Tests: Final Polish and Verification', () => {
       const touchStartTime = Date.now();
       const activationDelay = 100;
 
-      // After delay, drag should activate
       const canActivate = Date.now() - touchStartTime >= activationDelay;
+      expect(canActivate).toBe(true);
 
       expect(activationDelay).toBe(100);
     });
@@ -924,7 +938,7 @@ describe('Integration Tests: Final Polish and Verification', () => {
   describe('Widget Actions During Drag', () => {
     it('should allow edit action while drag is in progress', () => {
       // Requirement: 8.5 - Actions remain functional during drag
-      let isDragging = true;
+      const isDragging = true;
       let isEditing = false;
 
       const handleEdit = () => {
@@ -944,7 +958,7 @@ describe('Integration Tests: Final Polish and Verification', () => {
         { id: 'w2', type: 'weather', width: FIXED_WIDGET_WIDTH },
       ];
 
-      let isDragging = true;
+      const isDragging = true;
 
       const handleDelete = (id: string) => {
         return widgets.filter((w) => w.id !== id);
@@ -959,7 +973,7 @@ describe('Integration Tests: Final Polish and Verification', () => {
 
     it('should allow refresh action while drag is in progress', () => {
       // Requirement: 8.5 - Actions remain functional during drag
-      let isDragging = true;
+      const isDragging = true;
       let isRefreshing = false;
 
       const handleRefresh = () => {

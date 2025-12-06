@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { StockTableWidget } from './StockTableWidget';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
@@ -54,10 +54,11 @@ describe('StockTableWidget', () => {
     });
 
     it('renders stocks sorted alphabetically by ticker', async () => {
-        (global.fetch as any).mockResolvedValueOnce({
+        const mockFetch = vi.fn().mockResolvedValueOnce({
             ok: true,
             json: async () => ({ stocks: mockStocks }),
         });
+        global.fetch = mockFetch;
 
         render(<StockTableWidget tickers="MSFT,AAPL" />);
 
@@ -72,9 +73,10 @@ describe('StockTableWidget', () => {
     });
 
     it('displays error message on fetch failure', async () => {
-        (global.fetch as any).mockResolvedValueOnce({
+        const mockFetch = vi.fn().mockResolvedValueOnce({
             ok: false,
         });
+        global.fetch = mockFetch;
 
         render(<StockTableWidget tickers="AAPL" />);
 
@@ -114,10 +116,11 @@ describe('StockTableWidget', () => {
             { ...mockStocks[1] } // Duplicate AAPL
         ];
 
-        (global.fetch as any).mockResolvedValueOnce({
+        const mockFetch = vi.fn().mockResolvedValueOnce({
             ok: true,
             json: async () => ({ stocks: duplicateFetchedStocks }),
         });
+        global.fetch = mockFetch;
 
         render(<StockTableWidget tickers="MSFT,AAPL" />);
 
@@ -137,10 +140,11 @@ describe('StockTableWidget', () => {
             { ...mockStocks[1] } // Duplicate AAPL
         ];
 
-        (global.fetch as any).mockResolvedValueOnce({
+        const mockFetch = vi.fn().mockResolvedValueOnce({
             ok: true,
             json: async () => ({ stocks: duplicateFetchedStocks }),
         });
+        global.fetch = mockFetch;
 
         render(<StockTableWidget tickers="MSFT,AAPL" onDataChange={onDataChange} />);
 

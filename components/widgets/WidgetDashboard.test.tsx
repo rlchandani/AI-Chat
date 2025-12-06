@@ -17,6 +17,7 @@ const FIXED_WIDGET_WIDTH = 450;
  */
 function normalizeWidgetDimensions(widget: WidgetInstance): WidgetInstance {
   // Remove height property and ensure fixed width
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { height, ...rest } = widget;
   return {
     ...rest,
@@ -532,10 +533,10 @@ describe('Error Handling and Edge Cases', () => {
       // Simulate drag cancellation
       const handleDragCancel = () => {
         dragState = {
-          activeId: null as any,
-          activeType: null as any,
+          activeId: null as unknown as string,
+          activeType: null as unknown as WidgetType,
           activeIndex: -1,
-          origin: null as any,
+          origin: null as unknown as 'board',
         };
       };
 
@@ -586,7 +587,7 @@ describe('Error Handling and Edge Cases', () => {
   describe('Concurrent drag prevention', () => {
     it('should prevent starting new drag when one is active', () => {
       // Requirement 7.4: Add handling for concurrent drag attempts
-      let activeDrag = { id: 'w1', type: 'stock' as WidgetType, activeIndex: 0, origin: 'board' as const };
+      const activeDrag = { id: 'w1', type: 'stock' as WidgetType, activeIndex: 0, origin: 'board' as const };
 
       const attemptNewDrag = () => {
         if (activeDrag !== null) {
@@ -601,7 +602,7 @@ describe('Error Handling and Edge Cases', () => {
 
     it('should allow starting drag when none is active', () => {
       // Requirement 7.4: Add handling for concurrent drag attempts
-      let activeDrag = null;
+      const activeDrag = null;
 
       const attemptNewDrag = () => {
         if (activeDrag !== null) {
@@ -637,7 +638,7 @@ describe('Error Handling and Edge Cases', () => {
 
       try {
         parsedData = JSON.parse(corruptedData);
-      } catch (error) {
+      } catch {
         useFallback = true;
       }
 
@@ -975,7 +976,7 @@ describe('Widget Action Integration', () => {
   describe('Edit action during drag operations', () => {
     it('should allow edit action to be triggered independently of drag state', () => {
       // Requirement 8.5: Edit actions should not interfere with drag state
-      let isDragging = false;
+      const isDragging = false;
       let isEditing = false;
 
       // Simulate starting edit while not dragging
@@ -990,7 +991,7 @@ describe('Widget Action Integration', () => {
 
     it('should allow edit action while another widget is being dragged', () => {
       // Requirement 8.5: Edit actions should work on other widgets during drag
-      let activeDragId: string | null = 'widget-1';
+      const activeDragId: string | null = 'widget-1';
       let editingWidgetId: string | null = null;
 
       // Simulate editing a different widget while one is being dragged
@@ -1036,7 +1037,7 @@ describe('Widget Action Integration', () => {
 
     it('should not trigger drag when clicking edit button', () => {
       // Requirement 8.5: Edit button should not trigger drag
-      let isDragging = false;
+      const isDragging = false;
       let isEditing = false;
 
       // Simulate clicking edit button (not drag handle)
@@ -1054,7 +1055,7 @@ describe('Widget Action Integration', () => {
   describe('Delete action during drag operations', () => {
     it('should allow delete action to be triggered independently of drag state', () => {
       // Requirement 8.5: Delete actions should not interfere with drag state
-      let isDragging = false;
+      const isDragging = false;
       let showDeleteDialog = false;
 
       // Simulate starting delete while not dragging
@@ -1069,7 +1070,7 @@ describe('Widget Action Integration', () => {
 
     it('should allow delete action while another widget is being dragged', () => {
       // Requirement 8.5: Delete actions should work on other widgets during drag
-      let activeDragId: string | null = 'widget-1';
+      const activeDragId: string | null = 'widget-1';
       let deletingWidgetId: string | null = null;
 
       // Simulate deleting a different widget while one is being dragged
@@ -1105,7 +1106,7 @@ describe('Widget Action Integration', () => {
 
     it('should not trigger drag when clicking delete button', () => {
       // Requirement 8.5: Delete button should not trigger drag
-      let isDragging = false;
+      const isDragging = false;
       let showDeleteDialog = false;
 
       // Simulate clicking delete button (not drag handle)
@@ -1147,7 +1148,7 @@ describe('Widget Action Integration', () => {
   describe('Refresh action during drag operations', () => {
     it('should allow refresh action to be triggered independently of drag state', () => {
       // Requirement 8.5: Refresh actions should not interfere with drag state
-      let isDragging = false;
+      const isDragging = false;
       let isRefreshing = false;
 
       // Simulate starting refresh while not dragging
@@ -1162,7 +1163,7 @@ describe('Widget Action Integration', () => {
 
     it('should allow refresh action while another widget is being dragged', () => {
       // Requirement 8.5: Refresh actions should work on other widgets during drag
-      let activeDragId: string | null = 'widget-1';
+      const activeDragId: string | null = 'widget-1';
       let refreshingWidgetId: string | null = null;
 
       // Simulate refreshing a different widget while one is being dragged
@@ -1218,7 +1219,7 @@ describe('Widget Action Integration', () => {
 
     it('should not trigger drag when clicking refresh button', () => {
       // Requirement 8.5: Refresh button should not trigger drag
-      let isDragging = false;
+      const isDragging = false;
       let isRefreshing = false;
 
       // Simulate clicking refresh button (not drag handle)
@@ -1270,7 +1271,7 @@ describe('Widget Action Integration', () => {
         isDragging: false,
       };
 
-      let actionState = {
+      const actionState = {
         editingId: null as string | null,
         deletingId: null as string | null,
         refreshingIds: new Set<string>(),
@@ -1302,8 +1303,8 @@ describe('Widget Action Integration', () => {
     it('should allow drag to complete while actions are in progress', () => {
       // Requirement 8.5: Drag should not be blocked by active actions
       let isDragging = true;
-      let isEditing = true;
-      let isRefreshing = true;
+      const isEditing = true;
+      const isRefreshing = true;
 
       // Simulate drag completion
       const handleDragEnd = () => {
@@ -1320,7 +1321,7 @@ describe('Widget Action Integration', () => {
 
     it('should allow actions to complete while drag is in progress', () => {
       // Requirement 8.5: Actions should not be blocked by active drag
-      let isDragging = true;
+      const isDragging = true;
       let isEditing = true;
 
       // Simulate edit completion
@@ -1337,13 +1338,13 @@ describe('Widget Action Integration', () => {
 
     it('should not interfere with widget reordering when actions are active', () => {
       // Requirement 8.5: Widget reordering should work with active actions
-      let widgets: WidgetInstance[] = [
+      const widgets: WidgetInstance[] = [
         { id: 'w1', type: 'stock', width: 450 },
         { id: 'w2', type: 'weather', width: 450 },
         { id: 'w3', type: 'clock', width: 450 },
       ];
 
-      let editingId = 'w2';
+      const editingId = 'w2';
 
       // Simulate reordering while editing
       const handleReorder = (oldIndex: number, newIndex: number) => {
@@ -1402,6 +1403,9 @@ describe('Widget Action Integration', () => {
       let actionClicked = false;
 
       const handleDragStart = () => { dragStarted = true; };
+
+      // Use the function to avoid unused variable warning
+      handleDragStart();
       const handleActionClick = (event: { stopPropagation: () => void }) => {
         event.stopPropagation();
         actionClicked = true;
@@ -1422,8 +1426,8 @@ describe('Widget Action Integration', () => {
 
     it('should maintain button functionality during drag operations', () => {
       // Requirement 8.5: Buttons should remain functional during drag
-      let isDragging = true;
-      let buttonDisabled = false;
+      const isDragging = true;
+      const buttonDisabled = false;
 
       // Verify buttons are not disabled during drag
       const isButtonEnabled = !buttonDisabled && isDragging;
@@ -1497,3 +1501,4 @@ describe('Widget Action Integration', () => {
     });
   });
 });
+

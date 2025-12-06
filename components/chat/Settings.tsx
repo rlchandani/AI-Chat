@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Moon, Sun, Monitor, Clock, Scroll, Code, Brain, Bug, Database, RotateCcw, PanelLeft, Key, Shield, ExternalLink, Eye, EyeOff, HelpCircle, Lock, Unlock, AlertTriangle, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { X, Moon, Sun, Monitor, Clock, Scroll, Code, Brain, Bug, Database, RotateCcw, PanelLeft, Key, Shield, Eye, EyeOff, HelpCircle, Lock, Unlock, AlertTriangle, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     getSettings,
@@ -17,9 +18,8 @@ import {
     deleteApiKey,
     getCurrentPin,
 } from '@/utils/settingsStorage';
-import { isEncrypted, encryptApiKey, clearSessionKeys } from '@/utils/apiKeyEncryption';
+import { isEncrypted, clearSessionKeys } from '@/utils/apiKeyEncryption';
 import { AVAILABLE_MODELS } from '@/utils/modelStorage';
-import Link from 'next/link';
 import { ConfirmationModal } from './ConfirmationModal';
 
 export type HighlightApiKey = 'gemini' | 'openai' | null;
@@ -61,6 +61,7 @@ export function Settings({ isOpen, onClose, highlightApiKey }: SettingsProps) {
     useEffect(() => {
         if (isOpen) {
             const currentSettings = getSettings();
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setSettings(currentSettings);
             setSavedSettings(currentSettings);
             setHasChanges(false);
@@ -209,10 +210,16 @@ export function Settings({ isOpen, onClose, highlightApiKey }: SettingsProps) {
         { value: 'system' as const, icon: Monitor, label: 'System' },
     ];
 
+    const [isMobile, setIsMobile] = useState(false);
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
     if (!mounted) return null;
@@ -322,9 +329,10 @@ export function Settings({ isOpen, onClose, highlightApiKey }: SettingsProps) {
                                     <SettingToggle
                                         icon={PanelLeft}
                                         label="Auto-Hide Sidebar"
-                                        description="Automatically hide the sidebar when not in use"
-                                        value={settings.autoHideSidebar}
-                                        onChange={(value) => handleSettingChange('autoHideSidebar', value)}
+                                        description={isMobile ? "Always enabled on mobile" : "Automatically hide the sidebar when not in use"}
+                                        value={isMobile ? true : settings.autoHideSidebar}
+                                        onChange={(value) => !isMobile && handleSettingChange('autoHideSidebar', value)}
+                                        disabled={isMobile}
                                     />
                                 </div>
                             </section>
@@ -371,8 +379,8 @@ export function Settings({ isOpen, onClose, highlightApiKey }: SettingsProps) {
                                     <div className="space-y-1">
                                         <p className="text-sm font-medium text-primary">Your keys are stored locally</p>
                                         <p className="text-xs text-muted-foreground">
-                                            API keys are stored <strong>only in your browser's local storage</strong> and are never stored on any server or cloud.
-                                            Keys are sent securely to your app's API routes (same server) to make AI/Maps requests.
+                                            API keys are stored <strong>only in your browser&apos;s local storage</strong> and are never stored on any server or cloud.
+                                            Keys are sent securely to your app&apos;s API routes (same server) to make AI/Maps requests.
                                         </p>
                                     </div>
                                 </div>
@@ -510,11 +518,12 @@ interface SettingToggleProps {
     description: string;
     value: boolean;
     onChange: (value: boolean) => void;
+    disabled?: boolean;
 }
 
-function SettingToggle({ icon: Icon, label, description, value, onChange }: SettingToggleProps) {
+function SettingToggle({ icon: Icon, label, description, value, onChange, disabled }: SettingToggleProps) {
     return (
-        <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border hover:bg-accent/50 transition-colors">
+        <div className={`flex items-start justify-between gap-4 p-4 rounded-lg border border-border transition-colors ${disabled ? 'opacity-60 cursor-not-allowed bg-muted/50' : 'hover:bg-accent/50'}`}>
             <div className="flex items-start gap-3 flex-1">
                 <Icon size={20} className="text-muted-foreground mt-0.5 shrink-0" />
                 <div className="flex-1">
@@ -527,10 +536,12 @@ function SettingToggle({ icon: Icon, label, description, value, onChange }: Sett
                 </div>
             </div>
             <button
-                onClick={() => onChange(!value)}
+                onClick={() => !disabled && onChange(!value)}
+                disabled={disabled}
                 className={`
                     relative w-11 h-6 rounded-full transition-colors shrink-0
                     ${value ? 'bg-primary' : 'bg-muted'}
+                    ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
                 `}
                 role="switch"
                 aria-checked={value}
@@ -659,7 +670,7 @@ interface APIKeySecurityControlsProps {
     }>>;
 }
 
-function APIKeySecurityControls({ settings, onSettingChange, setHasChanges, setSettings, setSavedSettings, setModalConfig }: APIKeySecurityControlsProps) {
+function APIKeySecurityControls({ settings, onSettingChange, setSettings, setSavedSettings, setModalConfig }: APIKeySecurityControlsProps) {
     const [showPinSetup, setShowPinSetup] = useState(false);
     const [pin, setPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
@@ -727,7 +738,7 @@ function APIKeySecurityControls({ settings, onSettingChange, setHasChanges, setS
             // Update local state to reflect encryption immediately
             setSettings(freshSettings);
             setSavedSettings(freshSettings);
-        } catch (error) {
+        } catch {
             setPinError('Failed to encrypt keys. Please try again.');
         } finally {
             setIsEncrypting(false);
@@ -889,7 +900,7 @@ function APIKeySecurityControls({ settings, onSettingChange, setHasChanges, setS
                     <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
                         <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
                         <p className="text-xs text-amber-600 dark:text-amber-400">
-                            <strong>Remember your PIN!</strong> If you forget it, you'll need to re-enter your API keys.
+                            <strong>Remember your PIN!</strong> If you forget it, you&apos;ll need to re-enter your API keys.
                         </p>
                     </div>
 

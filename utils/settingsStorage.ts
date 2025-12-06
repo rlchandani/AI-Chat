@@ -1,3 +1,11 @@
+import {
+    isEncrypted,
+    decryptApiKey,
+    getSessionKey,
+    setSessionKey,
+    encryptApiKey
+} from './apiKeyEncryption';
+
 export interface AppSettings {
     // Appearance
     theme: 'light' | 'dark' | 'system';
@@ -24,21 +32,13 @@ export interface AppSettings {
     maxHistoryItems: number;
 }
 
-import {
-    isEncrypted,
-    decryptApiKey,
-    getSessionKey,
-    setSessionKey,
-    encryptApiKey
-} from './apiKeyEncryption';
-
 const STORAGE_KEY = 'gemini-chat-settings';
 const DEFAULT_SETTINGS: AppSettings = {
     theme: 'system',
     showTimestamps: false,
     autoScroll: true,
     markdownRendering: true,
-    autoHideSidebar: true,
+    autoHideSidebar: false,
     defaultModel: 'gemini-2.5-flash',
     geminiApiKey: '',
     openaiApiKey: '',

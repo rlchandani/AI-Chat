@@ -20,12 +20,13 @@ const DEFAULT_TIME_ZONES: TimeZone[] = [
 ];
 
 export function ClockWidget({ timeZones = DEFAULT_TIME_ZONES }: ClockWidgetProps) {
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
 
   useEffect(() => {
     // Update time every 30 seconds (30000ms)
     // This provides a good balance between performance and showing reasonably current time
     // The time will update smoothly without causing unnecessary re-renders
+    setCurrentTime(Date.now());
     const interval = setInterval(() => {
       setCurrentTime(Date.now());
     }, 30000); // 30 seconds
@@ -34,6 +35,7 @@ export function ClockWidget({ timeZones = DEFAULT_TIME_ZONES }: ClockWidgetProps
   }, []);
 
   const getTimeForZone = (offset: number) => {
+    if (currentTime === null) return '--:--';
     const utcTime = currentTime;
     const zoneTime = new Date(utcTime + offset * 60 * 60 * 1000);
     return zoneTime.toLocaleTimeString([], {

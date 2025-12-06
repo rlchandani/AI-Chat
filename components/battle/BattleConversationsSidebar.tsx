@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, Trash2, Edit2, X, Check, CheckSquare, Square } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Plus, MessageSquare, Trash2, Edit2, X, Check, CheckSquare, Square, Swords, LayoutGrid } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { Message } from '@/utils/chatStorage';
@@ -47,6 +49,7 @@ export function BattleConversationsSidebar({
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
+    const pathname = usePathname();
 
     // Track if we're on desktop and load settings
     useEffect(() => {
@@ -73,7 +76,6 @@ export function BattleConversationsSidebar({
     const shouldShow = !autoHideSidebar ? true : isOpen;
 
     // Load conversations when sidebar opens or conversation changes
-
 
     // Track unsaved conversations (conversations that exist but aren't saved)
     useEffect(() => {
@@ -430,14 +432,14 @@ export function BattleConversationsSidebar({
             <motion.div
                 initial={false}
                 animate={{
-                    width: !autoHideSidebar ? '20rem' : (shouldShow ? '20rem' : (isMobile ? '20rem' : '0rem')),
-                    x: !autoHideSidebar ? 0 : (shouldShow ? 0 : (isMobile ? '-100%' : 0)),
+                    width: isMobile ? '20rem' : (shouldShow ? '20rem' : '0rem'),
+                    x: isMobile ? (isOpen ? 0 : '-100%') : 0,
                 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                 className={`
-                    ${!autoHideSidebar
-                        ? 'relative h-full flex flex-col'
-                        : (isMobile ? 'fixed' : 'relative') + ' left-0 top-0 h-full z-[50] flex flex-col'
+                    ${isMobile
+                        ? 'fixed inset-y-0 left-0 z-[50] flex flex-col'
+                        : 'relative h-full flex flex-col'
                     }
                     bg-card border-r border-border shadow-xl md:shadow-lg overflow-hidden
                 `}
@@ -505,6 +507,33 @@ export function BattleConversationsSidebar({
                         )}
                     </div>
                 </div>
+
+                {/* Mobile Navigation */}
+                {mounted && isMobile && (
+                    <div className="p-2 border-b border-border space-y-1">
+                        <Link
+                            href="/"
+                            className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${pathname === '/' ? 'bg-primary/10 text-primary' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <MessageSquare size={20} />
+                            <span className="font-medium">Chat</span>
+                        </Link>
+                        <Link
+                            href="/battle"
+                            className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${pathname === '/battle' ? 'bg-primary/10 text-primary' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <Swords size={20} />
+                            <span className="font-medium">Battle</span>
+                        </Link>
+                        <Link
+                            href="/widgets"
+                            className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${pathname === '/widgets' ? 'bg-primary/10 text-primary' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <LayoutGrid size={20} />
+                            <span className="font-medium">Widgets</span>
+                        </Link>
+                    </div>
+                )}
 
                 {/* Conversations List */}
                 <div className={`flex-1 overflow-y-auto custom-scrollbar ${isGenerating ? 'opacity-50 pointer-events-none' : ''}`}>

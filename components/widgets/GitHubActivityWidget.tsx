@@ -89,7 +89,7 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
     return () => window.removeEventListener('github-edit', handleEdit as EventListener);
   }, [isEditable]);
 
-  const fetchGitHubData = async (user: string) => {
+  const fetchGitHubData = useCallback(async (user: string) => {
     if (!user.trim()) {
       setGithubData(null);
       setLoading(false);
@@ -116,14 +116,14 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
     } finally {
       setLoading(false);
     }
-  };
+  }, [onDataChange]);
 
   useEffect(() => {
     if (autoFetch && initialUsername && !hasFetchedRef.current) {
       hasFetchedRef.current = true;
       fetchGitHubData(initialUsername);
     }
-  }, [autoFetch, initialUsername]);
+  }, [autoFetch, initialUsername, fetchGitHubData]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

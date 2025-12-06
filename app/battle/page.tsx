@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { InputArea } from '@/components/chat/InputArea';
 import { BattleConversationsSidebar } from '@/components/battle/BattleConversationsSidebar';
@@ -9,13 +9,14 @@ import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ShareConversation } from '@/components/chat/ShareConversation';
 import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel, getAllModels } from '@/utils/modelStorage';
 import { getCurrentBattleConversationId, createNewBattleConversation, loadBattleHistory, loadBattleUsageStats, getBattleConversationMetadata, getUnsavedBattleConversationMetadata, setCurrentBattleConversationId as saveCurrentBattleConversationId, findEmptyBattleConversation, saveBattleHistory, saveBattleUsageStats, getAllBattleConversationIds } from '@/utils/battleStorage';
+import { type Message } from '@/utils/chatStorage';
 import { ManualChatStorage, useManualChat } from '@/hooks/use-manual-chat';
 import { getSetting, apiKeysNeedUnlock, unlockApiKeys, isApiKeyLocked, getApiKey } from '@/utils/settingsStorage';
 import { Settings, type HighlightApiKey } from '@/components/chat/Settings';
 import { APIKeyModal, type ApiKeyType } from '@/components/chat/APIKeyModal';
 import { PinUnlockModal } from '@/components/chat/PinUnlockModal';
 import { ApiKeyError } from '@/hooks/use-manual-chat';
-import { Menu, AlertCircle, Settings as SettingsIcon } from 'lucide-react';
+import { Menu, AlertCircle, Settings as SettingsIcon, MessageSquare, Swords, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -38,7 +39,7 @@ export default function BattlePage() {
   });
   const [showPinUnlock, setShowPinUnlock] = useState(false);
 
-  const handleApiKeyError = (error: ApiKeyError) => {
+  const handleApiKeyError = useCallback((error: ApiKeyError) => {
     // If keys are encrypted and locked, show unlock modal instead of missing key modal
     if (isApiKeyLocked(error.keyType)) {
       setShowPinUnlock(true);
@@ -49,7 +50,7 @@ export default function BattlePage() {
       isOpen: true,
       keyType: error.keyType,
     });
-  };
+  }, [setApiKeyModal, setShowPinUnlock]);
 
   // Track which conversation ID the current messages belong to
   // This prevents saving messages to the wrong ID during switching/creation
@@ -72,6 +73,7 @@ export default function BattlePage() {
     storage: battleStorageHandlers,
     onApiKeyError: handleApiKeyError,
   });
+  const { setMessages: setLeftMessages } = leftChat;
 
   // Right chat (Chat 2)
   const [rightModel, setRightModel] = useState<string>(DEFAULT_MODEL);
@@ -82,9 +84,11 @@ export default function BattlePage() {
     storage: battleStorageHandlers,
     onApiKeyError: handleApiKeyError,
   });
+  const { setMessages: setRightMessages } = rightChat;
 
   // Initialize models and conversation
   useEffect(() => {
+     
     setMounted(true);
     if (typeof window !== 'undefined') {
       const savedModel = getSelectedModel();
@@ -112,14 +116,14 @@ export default function BattlePage() {
         const savedData = loadBattleHistory(convId);
         if (savedData.leftMessages.length > 0 || savedData.rightMessages.length > 0) {
           // Load saved messages and models
-          leftChat.setMessages(savedData.leftMessages || []);
-          rightChat.setMessages(savedData.rightMessages || []);
+          setLeftMessages(savedData.leftMessages || []);
+          setRightMessages(savedData.rightMessages || []);
           if (savedData.leftModel) setLeftModel(savedData.leftModel);
           if (savedData.rightModel) setRightModel(savedData.rightModel);
           setHasInteractionStarted(true); // Interaction has started if there are messages
         } else {
-          leftChat.setMessages([]);
-          rightChat.setMessages([]);
+          setLeftMessages([]);
+          setRightMessages([]);
           setHasInteractionStarted(false);
         }
       } else {
@@ -209,7 +213,7 @@ export default function BattlePage() {
         setShowPinUnlock(true);
       }
     }
-  }, []);
+  }, [setLeftMessages, setRightMessages, handleApiKeyError, router]);
 
   // Validate model selection - prevent duplicates and disable after interaction starts
   const handleLeftModelSelect = (newModelId: string) => {
@@ -300,11 +304,11 @@ export default function BattlePage() {
     setInput('');
   };
 
-  const handleSwitchConversation = (data: any) => {
+  const handleSwitchConversation = (data: { leftMessages: Message[], rightMessages: Message[], leftModel?: string, rightModel?: string }) => {
     // This function is called by the sidebar when a conversation is selected.
     // The sidebar now passes the loaded battle data directly.
 
-    const battleData = data as { leftMessages: any[], rightMessages: any[], leftModel?: string, rightModel?: string };
+    const battleData = data;
 
     leftChat.setMessages(battleData.leftMessages || []);
     rightChat.setMessages(battleData.rightMessages || []);
@@ -401,7 +405,9 @@ export default function BattlePage() {
   // Initialize sidebar state
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const autoHide = getSetting('autoHideSidebar');
+      const isMobile = window.innerWidth < 768;
+      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
+       
       setAutoHideSidebar(autoHide);
       if (!autoHide) {
         setSidebarOpen(true);
@@ -418,7 +424,8 @@ export default function BattlePage() {
   // Listen for settings updates
   useEffect(() => {
     const handleSettingsUpdate = () => {
-      const autoHide = getSetting('autoHideSidebar');
+      const isMobile = window.innerWidth < 768;
+      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
       setAutoHideSidebar(autoHide);
       if (!autoHide) {
         setSidebarOpen(true);
@@ -435,6 +442,7 @@ export default function BattlePage() {
       const savedUsage = loadBattleUsageStats(currentConversationId);
       if (savedUsage) {
         if (savedUsage.left) {
+           
           setLeftUsage({
             tokens: savedUsage.left.totalTokens,
             cost: savedUsage.left.totalCost,
@@ -464,6 +472,7 @@ export default function BattlePage() {
         setConversationTitle(unsavedMetadata?.title || 'New Battle');
       }
     }
+     
   }, [currentConversationId]);
 
   // Listen for conversation updates (e.g., when title is renamed or auto-updated from first message)
@@ -489,6 +498,7 @@ export default function BattlePage() {
     if (currentConversationId && (leftChat.messages.length > 0 || rightChat.messages.length > 0)) {
       const metadata = getBattleConversationMetadata(currentConversationId);
       if (metadata) {
+         
         setConversationTitle(metadata.title);
       }
     }
@@ -560,6 +570,7 @@ export default function BattlePage() {
         leftChat.usageInfo.completionTokens,
         leftModel
       );
+       
       setLeftUsage({
         tokens: leftChat.usageInfo.totalTokens,
         cost,
@@ -582,6 +593,7 @@ export default function BattlePage() {
         rightChat.usageInfo.completionTokens,
         rightModel
       );
+       
       setRightUsage({
         tokens: rightChat.usageInfo.totalTokens,
         cost,
@@ -614,10 +626,17 @@ export default function BattlePage() {
         {/* Header */}
         <header className="h-14 border-b border-border flex items-center justify-between px-4 md:px-6 pt-2 bg-background/80 backdrop-blur-md z-50 sticky top-0">
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="md:hidden p-2 -ml-2 rounded-lg hover:bg-accent transition-colors"
+              aria-label="Toggle sidebar"
+            >
+              <Menu size={20} />
+            </button>
             {autoHideSidebar && (
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 rounded-lg hover:bg-accent transition-colors"
+                className="hidden md:block p-2 rounded-lg hover:bg-accent transition-colors"
                 aria-label="Toggle sidebar"
               >
                 <Menu size={20} />
@@ -634,23 +653,19 @@ export default function BattlePage() {
               </div>
               <div className="hidden md:flex items-center gap-1 ml-4 rounded-full bg-muted/40 p-1">
                 <NavTab href="/" currentPath={pathname}>
+                  <MessageSquare size={16} />
                   Chat
                 </NavTab>
                 <NavTab href="/battle" currentPath={pathname}>
+                  <Swords size={16} />
                   Battle
                 </NavTab>
                 <NavTab href="/widgets" currentPath={pathname}>
+                  <LayoutGrid size={16} />
                   Widgets
                 </NavTab>
               </div>
-              {mounted && currentConversationId && (
-                <>
-                  <div className="h-4 w-px bg-border mx-1" />
-                  <div className="text-sm font-medium text-muted-foreground truncate max-w-[200px] md:max-w-[300px]">
-                    {conversationTitle}
-                  </div>
-                </>
-              )}
+
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -692,7 +707,7 @@ export default function BattlePage() {
           <div className="flex-1 flex flex-col border-r border-border">
             <div className="h-12 border-b border-border flex items-center justify-between px-4 bg-muted/20">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-foreground">Chat 1</span>
+
                 <div className={hasInteractionStarted ? 'opacity-50 pointer-events-none' : ''}>
                   <ModelSelector
                     selectedModelId={leftModel}
@@ -728,7 +743,7 @@ export default function BattlePage() {
           <div className="flex-1 flex flex-col">
             <div className="h-12 border-b border-border flex items-center justify-between px-4 bg-muted/20">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-foreground">Chat 2</span>
+
                 <div className={hasInteractionStarted ? 'opacity-50 pointer-events-none' : ''}>
                   <ModelSelector
                     selectedModelId={rightModel}
@@ -823,7 +838,7 @@ function NavTab({ href, currentPath, children }: { href: string; currentPath: st
   return (
     <Link
       href={href}
-      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
         }`}
     >
       {children}

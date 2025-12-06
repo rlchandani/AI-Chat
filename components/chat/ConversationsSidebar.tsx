@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, Trash2, Edit2, X, Check, CheckSquare, Square } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Plus, MessageSquare, Trash2, Edit2, X, Check, CheckSquare, Square, Swords, LayoutGrid } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     getAllConversations,
@@ -45,6 +47,7 @@ export function ConversationsSidebar({
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
+    const pathname = usePathname();
 
     // Track if we're on desktop and load settings
     useEffect(() => {
@@ -109,6 +112,12 @@ export function ConversationsSidebar({
             const next = new Set(prev);
             savedIds.forEach(id => next.delete(id));
 
+            // Ensure current conversation is tracked if it's unsaved
+            // This fixes the issue where new chats don't appear immediately
+            if (currentConversationId && !savedIds.includes(currentConversationId)) {
+                next.add(currentConversationId);
+            }
+
             // Load conversations with cleaned unsaved IDs
             const unsavedIds = Array.from(next);
             const allConvs = getAllConversations(unsavedIds);
@@ -116,7 +125,7 @@ export function ConversationsSidebar({
 
             return next;
         });
-    }, []);
+    }, [currentConversationId]);
 
     useEffect(() => {
         const handleStorageChange = () => {
@@ -447,6 +456,33 @@ export function ConversationsSidebar({
                         )}
                     </div>
                 </div>
+
+                {/* Mobile Navigation */}
+                {mounted && isMobile && (
+                    <div className="p-2 border-b border-border space-y-1">
+                        <Link
+                            href="/"
+                            className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${pathname === '/' ? 'bg-primary/10 text-primary' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <MessageSquare size={20} />
+                            <span className="font-medium">Chat</span>
+                        </Link>
+                        <Link
+                            href="/battle"
+                            className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${pathname === '/battle' ? 'bg-primary/10 text-primary' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <Swords size={20} />
+                            <span className="font-medium">Battle</span>
+                        </Link>
+                        <Link
+                            href="/widgets"
+                            className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${pathname === '/widgets' ? 'bg-primary/10 text-primary' : 'hover:bg-accent text-muted-foreground hover:text-foreground'}`}
+                        >
+                            <LayoutGrid size={20} />
+                            <span className="font-medium">Widgets</span>
+                        </Link>
+                    </div>
+                )}
 
                 {/* Conversations List */}
                 <div className={`flex-1 overflow-y-auto custom-scrollbar ${isGenerating ? 'opacity-50 pointer-events-none' : ''}`}>

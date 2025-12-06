@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   getServerKeyPair,
-  deriveSharedSecret,
   decryptFromTransit,
   isEncryptedPayload,
   TransitEncryptionError,
-  ERROR_CODES,
   type EncryptedPayload,
 } from './transitEncryption.server';
 
@@ -13,7 +11,7 @@ describe('Transit Encryption Server', () => {
   describe('getServerKeyPair', () => {
     it('should generate a valid key pair', async () => {
       const keyPair = await getServerKeyPair();
-      
+
       expect(keyPair).toBeDefined();
       expect(keyPair.publicKey).toBeDefined();
       expect(keyPair.privateKey).toBeDefined();
@@ -24,7 +22,7 @@ describe('Transit Encryption Server', () => {
     it('should cache the key pair on subsequent calls', async () => {
       const keyPair1 = await getServerKeyPair();
       const keyPair2 = await getServerKeyPair();
-      
+
       // Should return the same cached key
       expect(keyPair1.publicKey).toBe(keyPair2.publicKey);
     });
@@ -39,7 +37,7 @@ describe('Transit Encryption Server', () => {
         iv: 'base64iv',
         authTag: 'base64tag',
       };
-      
+
       expect(isEncryptedPayload(validPayload)).toBe(true);
     });
 
@@ -61,7 +59,7 @@ describe('Transit Encryption Server', () => {
         encryptedData: 'data',
         // missing other fields
       };
-      
+
       expect(isEncryptedPayload(invalidPayload)).toBe(false);
     });
   });

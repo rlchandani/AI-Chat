@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Zap, Brain, Sparkles, Check } from 'lucide-react';
+import { ChevronDown, ChevronUp, Zap, Brain, Sparkles, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AVAILABLE_MODELS, getSelectedModel, setSelectedModel, getModelInfo, DEFAULT_MODEL, type ModelInfo, type ModelProvider } from '@/utils/modelStorage';
+import { AVAILABLE_MODELS, getSelectedModel, setSelectedModel, getModelInfo, DEFAULT_MODEL, type ModelProvider } from '@/utils/modelStorage';
 
 interface ModelSelectorProps {
     selectedModelId?: string; // Current selected model from parent
     onModelChange?: (modelId: string) => void;
     onModelSelect?: (modelId: string) => void; // Called when user selects a model (before change)
     align?: 'left' | 'right'; // Alignment of the dropdown
+    direction?: 'up' | 'down'; // Direction to open the dropdown
 }
 
 const capabilityIcons = {
@@ -24,7 +25,13 @@ const capabilityColors = {
     powerful: 'text-purple-500',
 };
 
-export function ModelSelector({ selectedModelId: propSelectedModelId, onModelChange, onModelSelect, align = 'right' }: ModelSelectorProps) {
+const GOOGLE_MODEL_SORT_ORDER: Record<string, number> = {
+    'gemini-3-pro-preview': 1,
+    'gemini-2.5-pro': 2,
+    'gemini-2.5-flash': 3,
+};
+
+export function ModelSelector({ selectedModelId: propSelectedModelId, onModelChange, onModelSelect, align = 'right', direction = 'down' }: ModelSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL);
     const [mounted, setMounted] = useState(false);
@@ -37,6 +44,7 @@ export function ModelSelector({ selectedModelId: propSelectedModelId, onModelCha
             const currentModel = propSelectedModelId || getSelectedModel();
             setSelectedModelId(currentModel);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Sync internal state with prop when it changes
@@ -84,8 +92,6 @@ export function ModelSelector({ selectedModelId: propSelectedModelId, onModelCha
     };
 
     const selectedModel = getModelInfo(selectedModelId) || AVAILABLE_MODELS[0];
-    const Icon = capabilityIcons[selectedModel.capability];
-    const colorClass = capabilityColors[selectedModel.capability];
 
     // Use default model info until mounted to avoid hydration mismatch
     const displayModel = mounted ? selectedModel : AVAILABLE_MODELS[0];
@@ -101,20 +107,27 @@ export function ModelSelector({ selectedModelId: propSelectedModelId, onModelCha
             >
                 <DisplayIcon size={16} className={displayColorClass} />
                 <span className="font-medium">{displayModel.name}</span>
-                <ChevronDown
-                    size={14}
-                    className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
-                />
+                {direction === 'up' ? (
+                    <ChevronUp
+                        size={14}
+                        className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    />
+                ) : (
+                    <ChevronDown
+                        size={14}
+                        className={`text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    />
+                )}
             </button>
 
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                        initial={{ opacity: 0, scale: 0.95, y: direction === 'up' ? 10 : -10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                        exit={{ opacity: 0, scale: 0.95, y: direction === 'up' ? 10 : -10 }}
                         transition={{ duration: 0.15 }}
-                        className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} top-full mt-2 w-72 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden`}
+                        className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} ${direction === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'} w-72 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden`}
                     >
                         <div className="p-2">
                             <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -127,14 +140,9 @@ export function ModelSelector({ selectedModelId: propSelectedModelId, onModelCha
 
                                     // Sort Google models: Gemini 3 Pro, Gemini 2.5 Pro, Gemini 2.5 Flash
                                     if (provider === 'google') {
-                                        const sortOrder: Record<string, number> = {
-                                            'gemini-3-pro-preview': 1,
-                                            'gemini-2.5-pro': 2,
-                                            'gemini-2.5-flash': 3,
-                                        };
                                         providerModels = providerModels.sort((a, b) => {
-                                            const orderA = sortOrder[a.id] ?? 999;
-                                            const orderB = sortOrder[b.id] ?? 999;
+                                            const orderA = GOOGLE_MODEL_SORT_ORDER[a.id] ?? 999;
+                                            const orderB = GOOGLE_MODEL_SORT_ORDER[b.id] ?? 999;
                                             return orderA - orderB;
                                         });
                                     }

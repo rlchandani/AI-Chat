@@ -45,6 +45,9 @@ const mockGitHubData = {
         totalForks: 20,
         totalIssues: 5,
         totalPullRequests: 15,
+        totalContributions: 100,
+        currentStreak: 5,
+        longestStreak: 10,
     },
 };
 
@@ -59,10 +62,11 @@ describe('GitHubActivityWidget', () => {
     });
 
     it('renders data correctly after fetch', async () => {
-        (global.fetch as any).mockResolvedValue({
+        const mockFetch = vi.fn().mockResolvedValue({
             ok: true,
             json: async () => mockGitHubData,
         });
+        global.fetch = mockFetch;
 
         render(<GitHubActivityWidget username="testuser" />);
 
@@ -78,9 +82,10 @@ describe('GitHubActivityWidget', () => {
     });
 
     it('displays error message on fetch failure', async () => {
-        (global.fetch as any).mockResolvedValue({
+        const mockFetch = vi.fn().mockResolvedValue({
             ok: false,
         });
+        global.fetch = mockFetch;
 
         render(<GitHubActivityWidget username="testuser" />);
 
@@ -98,10 +103,11 @@ describe('GitHubActivityWidget', () => {
 
     it('calls onDataChange with fetched data', async () => {
         const onDataChange = vi.fn();
-        (global.fetch as any).mockResolvedValue({
+        const mockFetch = vi.fn().mockResolvedValue({
             ok: true,
             json: async () => mockGitHubData,
         });
+        global.fetch = mockFetch;
 
         render(<GitHubActivityWidget username="testuser" onDataChange={onDataChange} />);
 

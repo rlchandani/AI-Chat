@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
     Message,
     loadChatHistory,
@@ -8,7 +8,7 @@ import {
     loadUsageStats,
     getCurrentConversationId,
 } from '@/utils/chatStorage';
-import { calculateCost, getModelInfo } from '@/utils/modelStorage';
+import { getModelInfo } from '@/utils/modelStorage';
 import { getApiKey } from '@/utils/settingsStorage';
 import { encryptForTransit, isTransitEncryptionSupported, type EncryptedPayload } from '@/utils/transitEncryption.client';
 
@@ -51,17 +51,19 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
         modelRef.current = model || 'gemini-2.5-flash';
     }, [model]);
 
-    const defaultStorage: ManualChatStorage = {
-        loadHistory: () => loadChatHistory(),
-        saveHistory: (msgs) => saveChatHistory(msgs),
-        loadUsageStats: () => loadUsageStats(),
-        saveUsageStats: (conversationId, usage, modelId) => saveUsageStats(conversationId, usage, modelId),
-        getCurrentConversationId: () => getCurrentConversationId(),
-    };
-    const storageHelpers = {
-        ...defaultStorage,
-        ...storage,
-    };
+    const storageHelpers = useMemo(() => {
+        const defaultStorage: ManualChatStorage = {
+            loadHistory: () => loadChatHistory(),
+            saveHistory: (msgs) => saveChatHistory(msgs),
+            loadUsageStats: () => loadUsageStats(),
+            saveUsageStats: (conversationId, usage, modelId) => saveUsageStats(conversationId, usage, modelId),
+            getCurrentConversationId: () => getCurrentConversationId(),
+        };
+        return {
+            ...defaultStorage,
+            ...storage,
+        };
+    }, [storage]);
 
     // Load chat history and usage stats on mount
     useEffect(() => {
@@ -274,15 +276,15 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
                     )
                 );
             }
-        } catch (error: any) {
-            if (error.name !== 'AbortError') {
+        } catch (error: unknown) {
+            if (error instanceof Error && error.name !== 'AbortError') {
                 console.error('Chat error:', error);
             }
         } finally {
             setIsLoading(false);
             setAbortController(null);
         }
-    }, [api, model]);
+    }, [api, model, onApiKeyError, storageHelpers]);
 
     const clearMessages = useCallback(() => {
         setMessages([]);

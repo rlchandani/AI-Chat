@@ -69,7 +69,7 @@ export async function generateEphemeralKeyPair(): Promise<CryptoKeyPair> {
     );
 
     return keyPair;
-  } catch (error) {
+  } catch {
     throw new TransitEncryptionError(
       'Failed to generate ephemeral key pair',
       ERROR_CODES.KEY_GENERATION_FAILED
@@ -98,7 +98,7 @@ export async function getServerPublicKey(): Promise<CryptoKey> {
   try {
     // Fetch server's public key
     const response = await fetch('/api/transit-key');
-    
+
     if (!response.ok) {
       throw new Error(`Server returned ${response.status}`);
     }
@@ -127,7 +127,7 @@ export async function getServerPublicKey(): Promise<CryptoKey> {
     };
 
     return publicKey;
-  } catch (error) {
+  } catch {
     throw new TransitEncryptionError(
       'Failed to fetch server public key',
       ERROR_CODES.SERVER_KEY_UNAVAILABLE
@@ -186,7 +186,7 @@ export async function deriveSharedSecret(
     );
 
     return aesKey;
-  } catch (error) {
+  } catch {
     throw new TransitEncryptionError(
       'Failed to derive shared secret',
       ERROR_CODES.ENCRYPTION_FAILED
@@ -236,7 +236,7 @@ export async function encryptForTransit(apiKey: string): Promise<EncryptedPayloa
 
     // AES-GCM returns ciphertext + auth tag combined
     const encryptedArray = new Uint8Array(encryptedBuffer);
-    
+
     // Split ciphertext and auth tag (last 16 bytes are auth tag)
     const ciphertext = encryptedArray.slice(0, -16);
     const authTag = encryptedArray.slice(-16);
@@ -264,7 +264,7 @@ export async function encryptForTransit(apiKey: string): Promise<EncryptedPayloa
     if (error instanceof TransitEncryptionError) {
       throw error;
     }
-    
+
     throw new TransitEncryptionError(
       'Failed to encrypt API key for transit',
       ERROR_CODES.ENCRYPTION_FAILED

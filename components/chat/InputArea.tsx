@@ -14,18 +14,20 @@ interface InputAreaProps {
     messageHistory?: string[]; // Previous user messages for up/down navigation
     onInputSet?: (value: string) => void; // Callback to set input value directly
     focusTrigger?: string | number; // When this changes, focus the textarea
+    footerActions?: React.ReactNode; // Actions to display in the footer (e.g. model selector)
 }
 
-export function InputArea({ 
-    input, 
-    handleInputChange, 
-    handleSubmit, 
-    isLoading, 
-    stop, 
+export function InputArea({
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
     modelId,
     messageHistory = [],
     onInputSet,
     focusTrigger,
+    footerActions,
 }: InputAreaProps) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [historyIndex, setHistoryIndex] = useState(-1); // -1 means not browsing history
@@ -45,6 +47,7 @@ export function InputArea({
     // Reset history index when a new message is sent (input becomes empty)
     useEffect(() => {
         if (input === '' && historyIndex !== -1) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setHistoryIndex(-1);
             setSavedInput('');
         }
@@ -75,7 +78,7 @@ export function InputArea({
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             if (!isLoading) {
-                handleSubmit(e as any);
+                handleSubmit(e as unknown as React.FormEvent);
             }
             return;
         }
@@ -85,27 +88,27 @@ export function InputArea({
 
         if (e.key === 'ArrowUp') {
             e.preventDefault();
-            
+
             // Save current input when starting to browse history
             if (historyIndex === -1) {
                 setSavedInput(input);
             }
-            
+
             // Move up in history (towards older messages)
-            const newIndex = historyIndex === -1 
-                ? messageHistory.length - 1 
+            const newIndex = historyIndex === -1
+                ? messageHistory.length - 1
                 : Math.max(0, historyIndex - 1);
-            
+
             setHistoryIndex(newIndex);
             setInputValue(messageHistory[newIndex]);
         } else if (e.key === 'ArrowDown') {
             e.preventDefault();
-            
+
             if (historyIndex === -1) return; // Not browsing history
-            
+
             // Move down in history (towards newer messages)
             const newIndex = historyIndex + 1;
-            
+
             if (newIndex >= messageHistory.length) {
                 // Reached the end, restore saved input
                 setHistoryIndex(-1);
@@ -122,14 +125,17 @@ export function InputArea({
             <form onSubmit={handleSubmit} className="relative group" suppressHydrationWarning>
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl opacity-20 group-hover:opacity-40 transition duration-500 blur-lg"></div>
 
-                <div className="relative flex flex-col bg-card border border-border rounded-2xl shadow-lg overflow-hidden transition-all duration-300 focus-within:shadow-xl focus-within:border-primary/50">
+                <div className="relative flex flex-col bg-card border border-border rounded-2xl shadow-lg transition-all duration-300 focus-within:shadow-xl focus-within:border-primary/50">
                     <textarea
                         ref={textareaRef}
                         value={input}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
                         placeholder="Ask iRedlof anything..."
-                        className="w-full min-h-[60px] max-h-[200px] p-4 pr-14 bg-transparent border-none focus:ring-0 resize-none text-base outline-none custom-scrollbar placeholder:text-muted-foreground transition-colors"
+                        className={clsx(
+                            "w-full min-h-[60px] max-h-[200px] p-4 pr-14 bg-transparent border-none focus:ring-0 resize-none text-base outline-none custom-scrollbar placeholder:text-muted-foreground transition-colors",
+                            footerActions ? "pb-12" : ""
+                        )}
                         rows={1}
                         suppressHydrationWarning
                     />
@@ -169,10 +175,17 @@ export function InputArea({
                             )}
                         </AnimatePresence>
                     </div>
+
+                    {/* Footer Actions (Model Selector, etc.) */}
+                    {footerActions && (
+                        <div className="absolute bottom-2 left-2 flex items-center gap-2 z-20">
+                            {footerActions}
+                        </div>
+                    )}
                 </div>
 
                 <div className="absolute -bottom-6 left-0 right-0 text-center">
-                    <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                    <p className="text-xs text-muted-foreground flex items-center justify-center gap-1 opacity-0">
                         <Sparkles size={10} /> Powered by {modelId ? (getModelInfo(modelId)?.name || 'Gemini') : 'Gemini'}
                     </p>
                 </div>

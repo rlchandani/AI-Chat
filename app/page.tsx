@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { Menu, Settings as SettingsIcon } from 'lucide-react';
+import { Menu, Settings as SettingsIcon, MessageSquare, Swords, LayoutGrid } from 'lucide-react';
 
 import { useManualChat, type ApiKeyError, type UsageInfo } from '@/hooks/use-manual-chat';
 import { ChatInterface } from '@/components/chat/ChatInterface';
@@ -30,8 +30,9 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true); // Open by default on desktop
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
   const [cumulativeUsage, setCumulativeUsage] = useState<{ tokens: number; cost: number } | null>(null);
-  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [conversationTitle, setConversationTitle] = useState<string>('New Conversation');
+  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [highlightApiKey, setHighlightApiKey] = useState<HighlightApiKey>(null);
   const [apiKeyModal, setApiKeyModal] = useState<{ isOpen: boolean; keyType: ApiKeyType | null }>({
@@ -44,7 +45,7 @@ export default function Home() {
   });
   const [showPinUnlock, setShowPinUnlock] = useState(false);
 
-  const handleApiKeyError = (error: ApiKeyError) => {
+  const handleApiKeyError = useCallback((error: ApiKeyError) => {
     // If keys are encrypted and locked, show unlock modal instead of missing key modal
     if (isApiKeyLocked(error.keyType)) {
       setShowPinUnlock(true);
@@ -55,7 +56,7 @@ export default function Home() {
       isOpen: true,
       keyType: error.keyType,
     });
-  };
+  }, []);
 
 
   // Custom storage helpers to ensure we always use the current conversation ID from state
@@ -309,7 +310,8 @@ export default function Home() {
   // Initialize sidebar state - open by default on desktop, closed on mobile
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const autoHide = getSetting('autoHideSidebar');
+      const isMobile = window.innerWidth < 768;
+      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setAutoHideSidebar(autoHide);
       if (!autoHide) {
@@ -328,7 +330,8 @@ export default function Home() {
   // Listen for settings updates to handle autoHideSidebar changes
   useEffect(() => {
     const handleSettingsUpdate = () => {
-      const autoHide = getSetting('autoHideSidebar');
+      const isMobile = window.innerWidth < 768;
+      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
       setAutoHideSidebar(autoHide);
       if (!autoHide) {
         setSidebarOpen(true);
@@ -450,31 +453,22 @@ export default function Home() {
               </div>
               <div className="hidden md:flex items-center gap-1 ml-4 rounded-full bg-muted/40 p-1">
                 <NavTab href="/" currentPath={pathname}>
+                  <MessageSquare size={16} />
                   Chat
                 </NavTab>
                 <NavTab href="/battle" currentPath={pathname}>
+                  <Swords size={16} />
                   Battle
                 </NavTab>
                 <NavTab href="/widgets" currentPath={pathname}>
+                  <LayoutGrid size={16} />
                   Widgets
                 </NavTab>
               </div>
-              {mounted && currentConversationId && (
-                <>
-                  <div className="h-4 w-px bg-border mx-1" />
-                  <div className="text-sm font-medium text-muted-foreground truncate max-w-[200px] md:max-w-[300px]">
-                    {conversationTitle}
-                  </div>
-                </>
-              )}
             </div>
           </div>
+
           <div className="flex items-center gap-3">
-            <ModelSelector
-              selectedModelId={selectedModel}
-              onModelChange={setSelectedModel}
-              onModelSelect={handleModelSelect}
-            />
             {/* Context Window Info - Show cumulative tokens from storage or current usage */}
             {mounted && (cumulativeUsage || usageInfo) && (() => {
               const modelInfo = getModelInfo(selectedModel);
@@ -564,9 +558,18 @@ export default function Home() {
             messageHistory={messages.filter(m => m.role === 'user').map(m => m.content)}
             onInputSet={setInput}
             focusTrigger={currentConversationId}
+            footerActions={
+              <ModelSelector
+                selectedModelId={selectedModel}
+                onModelChange={setSelectedModel}
+                onModelSelect={handleModelSelect}
+                align="left"
+                direction="up"
+              />
+            }
           />
         </div>
-      </div>
+      </div >
 
       {/* Model Change Dialog */}
       <ModelChangeDialog
@@ -578,25 +581,27 @@ export default function Home() {
       />
 
       {/* API Key Modal */}
-      {apiKeyModal.keyType && (
-        <APIKeyModal
-          isOpen={apiKeyModal.isOpen}
-          onClose={() => {
-            setApiKeyModal({ isOpen: false, keyType: null });
-            clearApiKeyError();
-          }}
-          missingKey={apiKeyModal.keyType}
-          onGoToSettings={() => {
-            // Map ApiKeyType to HighlightApiKey
-            const keyTypeMap: Record<ApiKeyType, HighlightApiKey> = {
-              gemini: 'gemini',
-              openai: 'openai',
-            };
-            setHighlightApiKey(keyTypeMap[apiKeyModal.keyType!]);
-            setShowSettings(true);
-          }}
-        />
-      )}
+      {
+        apiKeyModal.keyType && (
+          <APIKeyModal
+            isOpen={apiKeyModal.isOpen}
+            onClose={() => {
+              setApiKeyModal({ isOpen: false, keyType: null });
+              clearApiKeyError();
+            }}
+            missingKey={apiKeyModal.keyType}
+            onGoToSettings={() => {
+              // Map ApiKeyType to HighlightApiKey
+              const keyTypeMap: Record<ApiKeyType, HighlightApiKey> = {
+                gemini: 'gemini',
+                openai: 'openai',
+              };
+              setHighlightApiKey(keyTypeMap[apiKeyModal.keyType!]);
+              setShowSettings(true);
+            }}
+          />
+        )
+      }
 
       {/* PIN Unlock Modal */}
       <PinUnlockModal
@@ -619,7 +624,7 @@ function NavTab({ href, currentPath, children }: { href: string; currentPath: st
   return (
     <Link
       href={href}
-      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
         }`}
     >
       {children}
