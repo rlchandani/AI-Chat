@@ -54,12 +54,39 @@ export function InputArea({
     }, [input, historyIndex]);
 
     // Auto-resize textarea
-    useEffect(() => {
+    const adjustHeight = useCallback(() => {
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
             textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
         }
-    }, [input]);
+    }, []);
+
+    // Auto-resize textarea on input change
+    useEffect(() => {
+        adjustHeight();
+    }, [input, adjustHeight]);
+
+    // Auto-resize on width change (handles mobile layout shifts)
+    useEffect(() => {
+        if (!textareaRef.current) return;
+
+        // Store the last width to avoid unnecessary updates/loops
+        let lastWidth = textareaRef.current.clientWidth;
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                // Only adjust height if width has changed (text wrapping might change)
+                if (entry.contentRect.width !== lastWidth) {
+                    lastWidth = entry.contentRect.width;
+                    adjustHeight();
+                }
+            }
+        });
+
+        resizeObserver.observe(textareaRef.current);
+
+        return () => resizeObserver.disconnect();
+    }, [adjustHeight]);
 
     const setInputValue = useCallback((value: string) => {
         if (onInputSet) {
