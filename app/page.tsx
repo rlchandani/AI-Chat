@@ -174,10 +174,7 @@ export default function Home() {
         router.replace(cleanUrl.pathname + cleanUrl.search, { scroll: false });
       }
 
-      // Check if encrypted API keys need to be unlocked
-      if (apiKeysNeedUnlock()) {
-        setShowPinUnlock(true);
-      }
+
     }
   }, [router, setMessages]);
 
@@ -185,7 +182,7 @@ export default function Home() {
     setInput(e.target.value);
   };
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input?.trim()) {
       return;
@@ -196,8 +193,10 @@ export default function Home() {
       saveConversationModel(currentConversationId, selectedModel);
     }
 
-    append({ role: 'user', content: input });
-    setInput('');
+    const success = await append({ role: 'user', content: input });
+    if (success) {
+      setInput('');
+    }
   };
 
   const handleNewConversation = () => {

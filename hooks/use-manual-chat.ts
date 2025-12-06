@@ -111,11 +111,32 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
         }
     }, [abortController]);
 
-    const append = useCallback(async (message: { role: 'user'; content: string }) => {
+    const append = useCallback(async (message: { role: 'user'; content: string }): Promise<boolean> => {
         // Validate input
         if (!message.content || !message.content.trim()) {
             console.error('Cannot send empty message');
-            return;
+            return false;
+        }
+
+        // Determine which API key is needed based on model provider
+        const currentModel = model || 'gemini-2.5-flash';
+        const modelInfo = getModelInfo(currentModel);
+        const provider = modelInfo?.provider || 'google';
+
+        // Only send the API key that's actually needed
+        const apiKey = provider === 'google'
+            ? getApiKey('gemini')
+            : getApiKey('openai');
+
+        // Check if key is available (it might be empty if locked/missing)
+        if (!apiKey) {
+            const keyError: ApiKeyError = {
+                type: 'MISSING_API_KEY',
+                keyType: provider === 'google' ? 'gemini' : 'openai',
+            };
+            setApiKeyError(keyError);
+            onApiKeyError?.(keyError);
+            return false;
         }
 
         const now = Date.now();
@@ -146,16 +167,6 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
         setAbortController(controller);
 
         try {
-            // Determine which API key is needed based on model provider
-            const currentModel = model || 'gemini-2.5-flash';
-            const modelInfo = getModelInfo(currentModel);
-            const provider = modelInfo?.provider || 'google';
-
-            // Only send the API key that's actually needed
-            const apiKey = provider === 'google'
-                ? getApiKey('gemini')
-                : getApiKey('openai');
-
             // Encrypt API key for transit if supported
             let apiKeyPayload: string | EncryptedPayload = apiKey;
             if (isTransitEncryptionSupported()) {
@@ -203,7 +214,7 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
                         // Use ID to remove the specific message, avoiding duplicate removal
                         setMessages(prev => prev.filter(m => m.id !== userMessage.id));
                         setIsLoading(false);
-                        return;
+                        return false;
                     }
                 } catch {
                     // Not a JSON error, continue with generic error handling
@@ -276,10 +287,12 @@ export function useManualChat({ api = '/api/chat', model, storage, onApiKeyError
                     )
                 );
             }
+            return true;
         } catch (error: unknown) {
             if (error instanceof Error && error.name !== 'AbortError') {
                 console.error('Chat error:', error);
             }
+            return false;
         } finally {
             setIsLoading(false);
             setAbortController(null);

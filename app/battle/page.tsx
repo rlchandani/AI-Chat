@@ -88,7 +88,7 @@ export default function BattlePage() {
 
   // Initialize models and conversation
   useEffect(() => {
-     
+
     setMounted(true);
     if (typeof window !== 'undefined') {
       const savedModel = getSelectedModel();
@@ -208,10 +208,7 @@ export default function BattlePage() {
         router.replace(cleanUrl.pathname + cleanUrl.search, { scroll: false });
       }
 
-      // Check if encrypted API keys need to be unlocked
-      if (apiKeysNeedUnlock()) {
-        setShowPinUnlock(true);
-      }
+
     }
   }, [setLeftMessages, setRightMessages, handleApiKeyError, router]);
 
@@ -407,7 +404,7 @@ export default function BattlePage() {
     if (typeof window !== 'undefined') {
       const isMobile = window.innerWidth < 768;
       const autoHide = isMobile ? true : getSetting('autoHideSidebar');
-       
+
       setAutoHideSidebar(autoHide);
       if (!autoHide) {
         setSidebarOpen(true);
@@ -442,7 +439,7 @@ export default function BattlePage() {
       const savedUsage = loadBattleUsageStats(currentConversationId);
       if (savedUsage) {
         if (savedUsage.left) {
-           
+
           setLeftUsage({
             tokens: savedUsage.left.totalTokens,
             cost: savedUsage.left.totalCost,
@@ -472,7 +469,7 @@ export default function BattlePage() {
         setConversationTitle(unsavedMetadata?.title || 'New Battle');
       }
     }
-     
+
   }, [currentConversationId]);
 
   // Listen for conversation updates (e.g., when title is renamed or auto-updated from first message)
@@ -498,7 +495,7 @@ export default function BattlePage() {
     if (currentConversationId && (leftChat.messages.length > 0 || rightChat.messages.length > 0)) {
       const metadata = getBattleConversationMetadata(currentConversationId);
       if (metadata) {
-         
+
         setConversationTitle(metadata.title);
       }
     }
@@ -570,7 +567,7 @@ export default function BattlePage() {
         leftChat.usageInfo.completionTokens,
         leftModel
       );
-       
+
       setLeftUsage({
         tokens: leftChat.usageInfo.totalTokens,
         cost,
@@ -593,7 +590,7 @@ export default function BattlePage() {
         rightChat.usageInfo.completionTokens,
         rightModel
       );
-       
+
       setRightUsage({
         tokens: rightChat.usageInfo.totalTokens,
         cost,
