@@ -381,14 +381,14 @@ export function ConversationsSidebar({
             <motion.div
                 initial={false}
                 animate={{
-                    width: !autoHideSidebar ? '20rem' : (shouldShow ? '20rem' : (isMobile ? '20rem' : '0rem')),
-                    x: !autoHideSidebar ? 0 : (shouldShow ? 0 : (isMobile ? '-100%' : 0)),
+                    width: isMobile ? '20rem' : (shouldShow ? '20rem' : '0rem'),
+                    x: isMobile ? (isOpen ? 0 : '-100%') : 0,
                 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                 className={`
-                    ${!autoHideSidebar
-                        ? 'relative h-full flex flex-col'
-                        : (isMobile ? 'fixed' : 'relative') + ' left-0 top-0 h-full z-[50] flex flex-col'
+                    ${isMobile
+                        ? 'fixed inset-y-0 left-0 z-[50] flex flex-col'
+                        : 'relative h-full flex flex-col'
                     }
                     bg-card border-r border-border shadow-xl md:shadow-lg overflow-hidden
                 `}

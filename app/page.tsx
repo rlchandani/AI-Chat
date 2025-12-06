@@ -27,7 +27,7 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [mounted, setMounted] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Open by default on desktop
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Closed by default (mobile-first), opens on desktop via effect
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
   const [cumulativeUsage, setCumulativeUsage] = useState<{ tokens: number; cost: number } | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
