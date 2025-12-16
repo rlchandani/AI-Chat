@@ -65,7 +65,7 @@ import { Header } from '@/components/layout/Header';
 export type WidgetInstance = {
   id: string;
   type: WidgetType;
-  width: number;
+  // width removed - content is fluid
   height?: number; // Optional - widgets auto-size to content
   config?: {
     location?: string; // For weather widget
@@ -81,24 +81,24 @@ type WidgetData = StockUI | WeatherData | StockUI[] | GitHubData | Record<string
 
 const STORAGE_KEY = 'widget-dashboard-state';
 
-// Fixed width for all widgets
-const FIXED_WIDGET_WIDTH = 450;
+// Fixed width removed in favor of CSS grid
+// const FIXED_WIDGET_WIDTH = 450;
 
 const DEFAULT_WIDGETS = [
-  { id: 'stock-demo', type: 'stock', width: FIXED_WIDGET_WIDTH, config: { ticker: 'AAPL' } },
-  { id: 'weather-demo', type: 'weather', width: FIXED_WIDGET_WIDTH, config: { location: 'San Francisco, CA', unitType: 'imperial' } },
-  { id: 'notes-demo', type: 'notes', width: FIXED_WIDGET_WIDTH },
+  { id: 'stock-demo', type: 'stock', config: { ticker: 'AAPL' } },
+  { id: 'weather-demo', type: 'weather', config: { location: 'San Francisco, CA', unitType: 'imperial' } },
+  { id: 'notes-demo', type: 'notes' },
 ] as const;
 
 // Widget definitions moved to widget-definitions.ts
 
-const SIZE_PRESETS: Record<WidgetType, { width: number }> = {
-  stock: { width: FIXED_WIDGET_WIDTH },
-  'stock-table': { width: FIXED_WIDGET_WIDTH },
-  weather: { width: FIXED_WIDGET_WIDTH },
-  notes: { width: FIXED_WIDGET_WIDTH },
-  clock: { width: FIXED_WIDGET_WIDTH },
-  github: { width: FIXED_WIDGET_WIDTH },
+const SIZE_PRESETS: Record<WidgetType, Record<string, never>> = {
+  stock: {},
+  'stock-table': {},
+  weather: {},
+  notes: {},
+  clock: {},
+  github: {},
 };
 
 
@@ -116,12 +116,12 @@ export function WidgetDashboard() {
       if (stored) {
         const parsed = JSON.parse(stored) as WidgetInstance[];
         if (Array.isArray(parsed) && parsed.length) {
-          // Migrate widget widths to fixed defaults while preserving all config
-          const migrated = parsed.map((widget) => ({
-            ...widget,
-            width: FIXED_WIDGET_WIDTH,
-            // Preserve height if it exists, otherwise let it auto-size
-          }));
+          // Migrate widgets to remove width if present
+          const migrated = parsed.map((widget) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { width, ...rest } = widget as any; // Remove width from old state
+            return rest;
+          });
           return migrated;
         }
       }
@@ -430,9 +430,10 @@ export function WidgetDashboard() {
               <div
                 className="cursor-grabbing shadow-2xl origin-top-left"
                 style={{
-                  width: activeDrag.initialSize?.width ?? (SIZE_PRESETS[activeDrag.type]?.width || FIXED_WIDGET_WIDTH),
+                  width: activeDrag.initialSize?.width ?? 350, // Default width for drag preview
                   height: activeDrag.initialSize?.height,
-                  transform: 'scale(0.99) rotate(2deg)', // Scale to 99% and tilt slightly
+                  transform: 'scale(1.05) rotate(2deg)', // Scale up slightly and tilt
+                  zIndex: 999,
                 }}
               >
                 {activeDrag.widget ? (
@@ -444,7 +445,6 @@ export function WidgetDashboard() {
                     widget={{
                       id: 'temp-drag',
                       type: activeDrag.type,
-                      width: SIZE_PRESETS[activeDrag.type]?.width || FIXED_WIDGET_WIDTH,
                       config: activeDrag.type === 'stock-table' ? { tickers: 'AAPL,MSFT,GOOGL' } : undefined
                     }}
                     initialData={activeDrag.data}
@@ -501,13 +501,13 @@ function SortableWidgetCard({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition: isDragging ? 'none' : adaptiveTransition,
-    width: widget.width,
+    // width removed - controlled by grid
     zIndex: isDragging ? 50 : 'auto',
     position: isDragging ? 'relative' : undefined,
   } as React.CSSProperties;
 
   const placeholderStyle = {
-    width: widget.width,
+    // width removed
   } as React.CSSProperties;
 
   const handleDeleteClick = () => {
@@ -667,10 +667,10 @@ const MemoizedSortableWidgetCard = memo(
       return false; // Config changed, re-render
     }
 
-    // Check if width changed
-    if (prevProps.widget.width !== nextProps.widget.width) {
-      return false; // Width changed, re-render
-    }
+    // Width check removed
+    /* if (prevProps.widget.width !== nextProps.widget.width) {
+      return false; 
+    } */
 
     // Check if drag-related props changed
     if (prevProps.dragDirection !== nextProps.dragDirection ||
