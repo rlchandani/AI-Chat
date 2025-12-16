@@ -238,16 +238,26 @@ export function WeatherCard({
         }
     }, [weatherData?.location, initialLocation, autoLocationEnabled, unitType, onDataChange]);
 
+    // Stabilize handleRefresh for parent consumption to prevent infinite loops
+    const handleRefreshRef = useRef(handleRefresh);
+    useEffect(() => {
+        handleRefreshRef.current = handleRefresh;
+    });
+
+    const stableHandleRefresh = useCallback(() => {
+        handleRefreshRef.current();
+    }, []);
+
     // Expose refresh state to parent
     useEffect(() => {
         if (onRefreshStateChange) {
             onRefreshStateChange({
                 refreshing,
                 refreshMessage,
-                onRefresh: handleRefresh,
+                onRefresh: stableHandleRefresh,
             });
         }
-    }, [refreshing, refreshMessage, handleRefresh, onRefreshStateChange]);
+    }, [refreshing, refreshMessage, stableHandleRefresh, onRefreshStateChange]);
 
     // Check location permission status (only for information, don't trigger fetch here)
     useEffect(() => {

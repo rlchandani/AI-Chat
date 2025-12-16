@@ -16,6 +16,8 @@ import {
   useSensors,
   useDroppable,
   useDraggable,
+  closestCorners,
+  MeasuringStrategy,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -388,6 +390,12 @@ export function WidgetDashboard() {
 
         <DndContext
           sensors={sensors}
+          collisionDetection={closestCorners}
+          measuring={{
+            droppable: {
+              strategy: MeasuringStrategy.Always,
+            },
+          }}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
@@ -430,9 +438,10 @@ export function WidgetDashboard() {
               <div
                 className="cursor-grabbing shadow-2xl origin-top-left"
                 style={{
-                  width: activeDrag.initialSize?.width ?? 350, // Default width for drag preview
+                  width: activeDrag.initialSize?.width ?? 350,
                   height: activeDrag.initialSize?.height,
-                  transform: 'scale(1.05) rotate(2deg)', // Scale up slightly and tilt
+                  // Removed scale and rotation for better performance
+                  opacity: 0.9,
                   zIndex: 999,
                 }}
               >
@@ -528,27 +537,17 @@ function SortableWidgetCard({
       {/* Refresh button and status - only for stock, weather, stock-table, and github widgets */}
       {(widget.type === 'stock' || widget.type === 'weather' || widget.type === 'stock-table' || widget.type === 'github') && refreshState && (
         <>
-          <AnimatePresence>
-            {refreshState.refreshing && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Loader2 className="w-3 h-3 animate-spin text-foreground/70" />
-              </motion.div>
-            )}
-            {refreshState.refreshMessage && !refreshState.refreshing && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="w-2 h-2 rounded-full bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                title={refreshState.refreshMessage}
-              />
-            )}
-          </AnimatePresence>
+          {refreshState.refreshing && (
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+              <Loader2 className="w-3 h-3 animate-spin text-foreground/70" />
+            </div>
+          )}
+          {refreshState.refreshMessage && !refreshState.refreshing && (
+            <div
+              className="w-2 h-2 rounded-full bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity"
+              title={refreshState.refreshMessage}
+            />
+          )}
           <button
             type="button"
             onClick={refreshState.onRefresh}
@@ -600,6 +599,26 @@ function SortableWidgetCard({
     onDataChange(widget.id, data);
   }, [widget.id, onDataChange]);
 
+  const handleRefreshStateChange = useCallback((newState: { refreshing: boolean; refreshMessage: string | null; onRefresh: () => void; } | null) => {
+    setRefreshState((prevState) => {
+      // If both are null, no change
+      if (!prevState && !newState) return prevState;
+      // If one is null and other isn't, change
+      if (!prevState || !newState) return newState;
+
+      // Deep compare values
+      if (
+        prevState.refreshing === newState.refreshing &&
+        prevState.refreshMessage === newState.refreshMessage &&
+        prevState.onRefresh === newState.onRefresh
+      ) {
+        return prevState; // Return identical reference to skip re-render
+      }
+
+      return newState;
+    });
+  }, []);
+
   return (
     <>
       <div
@@ -624,7 +643,7 @@ function SortableWidgetCard({
             widget={widget}
             onUpdate={onUpdate}
             onDataChange={handleWidgetDataChange}
-            onRefreshStateChange={setRefreshState}
+            onRefreshStateChange={handleRefreshStateChange}
             editTrigger={editTrigger}
           />
         </WidgetCardFrame>
@@ -651,30 +670,26 @@ function SortableWidgetCard({
 const MemoizedSortableWidgetCard = memo(
   SortableWidgetCard,
   (prevProps, nextProps) => {
-    // Return true if props are equal (DON'T re-render)
-    // Return false if props are different (DO re-render)
-
-    // Check if widget id and type are the same
+    // Strict widget ID and type check
     if (prevProps.widget.id !== nextProps.widget.id ||
       prevProps.widget.type !== nextProps.widget.type) {
-      return false; // Props changed, re-render
+      return false;
     }
 
-    // Check if widget config changed
+    // Config check using JSON stringify
     const prevConfig = JSON.stringify(prevProps.widget.config || {});
     const nextConfig = JSON.stringify(nextProps.widget.config || {});
     if (prevConfig !== nextConfig) {
-      return false; // Config changed, re-render
+      return false;
     }
 
-    // Width check removed
-    /* if (prevProps.widget.width !== nextProps.widget.width) {
-      return false; 
-    } */
+    // Check if drag direction changed (needed for responsive transitions)
+    if (prevProps.dragDirection !== nextProps.dragDirection) {
+      return false;
+    }
 
     // Check if drag-related props changed
-    if (prevProps.dragDirection !== nextProps.dragDirection ||
-      prevProps.itemIndex !== nextProps.itemIndex) {
+    if (prevProps.dragDirection !== nextProps.dragDirection) {
       return false; // Drag props changed, re-render
     }
 
@@ -775,18 +790,129 @@ function DragPreview({ widget, initialData }: { widget: WidgetInstance; initialD
     <WidgetCardFrame
       title={widget.type.toUpperCase()}
     >
-      <WidgetPreview
+      <SnapshotPreview
         type={widget.type}
         widget={widget}
-        onUpdate={() => { }}
-        isDragPreview={true}
         initialData={initialData}
       />
     </WidgetCardFrame>
   );
 }
 
-function WidgetPreview({
+function SnapshotPreview({
+  type,
+  widget,
+  initialData,
+}: {
+  type: WidgetType;
+  widget: WidgetInstance;
+  initialData?: WidgetData;
+}) {
+  switch (type) {
+    case 'stock':
+      const stockData = initialData as StockUI | undefined;
+      return (
+        <div className="flex flex-col h-full">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h2 className="text-2xl font-bold">{stockData?.ticker || widget.config?.ticker || 'AAPL'}</h2>
+              <p className="text-sm text-muted-foreground">My List</p>
+            </div>
+            <div className={`flex items-center gap-1 ${stockData && (stockData.changePercent || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <span className="text-lg font-semibold">{stockData?.price ? `$${stockData.price.toFixed(2)}` : '--'}</span>
+            </div>
+          </div>
+          <div className="flex-1 bg-muted/20 rounded-lg animate-pulse" />
+        </div>
+      );
+    case 'weather':
+      const weatherData = initialData as WeatherData | undefined;
+      return (
+        <div className="flex flex-col h-full justify-between">
+          <div className="flex justify-between items-start">
+            <div>
+              <h2 className="text-3xl font-bold">{weatherData?.temperature ? Math.round(weatherData.temperature) : '--'}°</h2>
+              <p className="text-muted-foreground">{widget.config?.location || 'San Francisco, CA'}</p>
+            </div>
+            <div className="p-2 bg-yellow-500/10 text-yellow-500 rounded-full">
+              <Sun size={24} />
+            </div>
+          </div>
+          <div className="space-y-2 mt-4">
+            <div className="h-4 bg-muted/20 rounded w-3/4" />
+            <div className="h-4 bg-muted/20 rounded w-1/2" />
+          </div>
+        </div>
+      );
+    case 'stock-table':
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b border-border pb-2">
+            <div className="h-5 w-16 bg-muted/30 rounded" />
+            <div className="h-5 w-16 bg-muted/30 rounded" />
+            <div className="h-5 w-16 bg-muted/30 rounded" />
+          </div>
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex items-center justify-between">
+                <div className="h-4 w-12 bg-muted/20 rounded" />
+                <div className="h-4 w-16 bg-muted/20 rounded" />
+                <div className="h-4 w-16 bg-muted/20 rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    case 'notes':
+      return (
+        <div className="space-y-3 text-sm">
+          <p className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+            <NotebookPen size={14} /> Highlights
+          </p>
+          <ul className="space-y-2">
+            <li className="flex gap-2">
+              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary"></span>
+              Prepare talking points
+            </li>
+            <li className="flex gap-2">
+              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary"></span>
+              Review pricing
+            </li>
+          </ul>
+        </div>
+      );
+    case 'clock':
+      return (
+        <div className="flex flex-col items-center justify-center h-full">
+          <Clock size={48} className="text-primary/50 mb-2" />
+          <div className="h-8 w-32 bg-muted/20 rounded" />
+        </div>
+      );
+    case 'github':
+      return (
+        <div className="flex flex-col h-full gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-muted/30" />
+            <div>
+              <div className="h-4 w-24 bg-muted/30 rounded mb-1" />
+              <div className="h-3 w-32 bg-muted/20 rounded" />
+            </div>
+          </div>
+          <div className="flex-1 rounded-lg border border-border bg-muted/10 p-2">
+            <div className="grid grid-cols-7 gap-1 h-full opacity-50">
+              {Array.from({ length: 28 }).map((_, i) => (
+                <div key={i} className="rounded-sm bg-primary/20" />
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+const WidgetPreview = memo(function WidgetPreview({
   type,
   widget,
   onUpdate,
@@ -841,7 +967,7 @@ function WidgetPreview({
     default:
       return null;
   }
-}
+});
 
 function EditableStockTableWidget({
   widget,

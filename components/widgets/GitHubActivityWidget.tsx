@@ -159,16 +159,26 @@ export function GitHubActivityWidget({ username: initialUsername, onUpdate, isEd
     }
   }, [username, onDataChange]);
 
+  // Stabilize handleRefresh for parent consumption to prevent infinite loops
+  const handleRefreshRef = useRef(handleRefresh);
+  useEffect(() => {
+    handleRefreshRef.current = handleRefresh;
+  });
+
+  const stableHandleRefresh = useCallback(() => {
+    handleRefreshRef.current();
+  }, []);
+
   // Expose refresh state to parent
   useEffect(() => {
     if (onRefreshStateChange) {
       onRefreshStateChange({
         refreshing,
         refreshMessage,
-        onRefresh: handleRefresh,
+        onRefresh: stableHandleRefresh,
       });
     }
-  }, [refreshing, refreshMessage, handleRefresh, onRefreshStateChange]);
+  }, [refreshing, refreshMessage, stableHandleRefresh, onRefreshStateChange]);
 
   const handleSave = () => {
     if (onUpdate) {
