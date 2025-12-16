@@ -26,9 +26,22 @@ export default function BattlePage() {
   const pathname = usePathname();
   const [input, setInput] = useState('');
   const [mounted, setMounted] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      // If mobile, default to false. If desktop, default to true (or setting)
+      return !isMobile;
+    }
+    return true; // Default to open for SSR (desktop-first)
+  });
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
-  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      return isMobile ? true : getSetting('autoHideSidebar');
+    }
+    return true;
+  });
   const [conversationTitle, setConversationTitle] = useState<string>('New Battle');
   const [showSettings, setShowSettings] = useState(false);
   const [modelConflict, setModelConflict] = useState<string | null>(null);
@@ -400,24 +413,6 @@ export default function BattlePage() {
     setInput('');
   };
 
-  // Initialize sidebar state
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isMobile = window.innerWidth < 768;
-      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
-
-      setAutoHideSidebar(autoHide);
-      if (!autoHide) {
-        setSidebarOpen(true);
-      } else {
-        if (window.innerWidth >= 768) {
-          setSidebarOpen(true);
-        } else {
-          setSidebarOpen(false);
-        }
-      }
-    }
-  }, []);
 
   // Listen for settings updates
   useEffect(() => {

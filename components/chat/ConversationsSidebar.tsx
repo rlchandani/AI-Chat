@@ -389,6 +389,7 @@ export function ConversationsSidebar({
 
             {/* Sidebar - Toggleable on both mobile and desktop */}
             <motion.div
+                suppressHydrationWarning
                 initial={false}
                 animate={{
                     width: isMobile ? '20rem' : (shouldShow ? '20rem' : '0rem'),
@@ -398,9 +399,11 @@ export function ConversationsSidebar({
                 className={`
                     ${isMobile
                         ? 'fixed inset-y-0 left-0 z-[50] flex flex-col'
-                        : 'relative h-full flex flex-col'
+                        : 'relative h-full flex-col'
                     }
                     bg-card border-r border-border shadow-xl md:shadow-lg overflow-hidden
+                    {/* Hide on mobile by default via CSS to prevent flash */}
+                    ${(isMobile && isOpen) ? 'flex' : 'hidden md:flex'}
                 `}
                 style={{
                     width: '20rem', // Default width

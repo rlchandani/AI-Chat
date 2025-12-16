@@ -63,6 +63,7 @@ export function WidgetSidebar({
 
             {/* Sidebar */}
             <motion.div
+                suppressHydrationWarning
                 initial={false}
                 animate={{
                     width: isMobile ? '20rem' : (isOpen ? '20rem' : '0rem'),
@@ -72,8 +73,10 @@ export function WidgetSidebar({
                 className={clsx(
                     isMobile
                         ? 'fixed inset-y-0 left-0 z-[50] flex flex-col'
-                        : 'relative h-full flex flex-col',
-                    'bg-card border-r border-border shadow-xl md:shadow-lg overflow-hidden'
+                        : 'relative h-full flex-col',
+                    'bg-card border-r border-border shadow-xl md:shadow-lg overflow-hidden',
+                    // Hide on mobile by default via CSS to prevent flash, show only when explicitly open
+                    (isMobile && isOpen) ? 'flex' : 'hidden md:flex'
                 )}
                 style={{
                     width: '20rem', // Default width to avoid layout shift

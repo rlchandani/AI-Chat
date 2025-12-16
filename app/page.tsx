@@ -28,12 +28,25 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [mounted, setMounted] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Open by default for clean start, adjusts via effect
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      // If mobile, default to false. If desktop, default to true (or setting)
+      return !isMobile;
+    }
+    return true; // Default to open for SSR (desktop-first)
+  });
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
   const [cumulativeUsage, setCumulativeUsage] = useState<{ tokens: number; cost: number } | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [conversationTitle, setConversationTitle] = useState<string>('New Conversation');
-  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      return isMobile ? true : getSetting('autoHideSidebar');
+    }
+    return true;
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [highlightApiKey, setHighlightApiKey] = useState<HighlightApiKey>(null);
   const [apiKeyModal, setApiKeyModal] = useState<{ isOpen: boolean; keyType: ApiKeyType | null }>({
@@ -306,26 +319,6 @@ export default function Home() {
       setConversationTitle(unsavedMetadata?.title || 'New Conversation');
     }
   };
-
-  // Initialize sidebar state - open by default on desktop, closed on mobile
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isMobile = window.innerWidth < 768;
-      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAutoHideSidebar(autoHide);
-      if (!autoHide) {
-        setSidebarOpen(true);
-      } else {
-        // Set initial state based on screen size
-        if (window.innerWidth >= 768) {
-          setSidebarOpen(true);
-        } else {
-          setSidebarOpen(false);
-        }
-      }
-    }
-  }, []);
 
   // Listen for settings updates to handle autoHideSidebar changes
   useEffect(() => {

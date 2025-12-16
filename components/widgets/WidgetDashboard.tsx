@@ -149,9 +149,27 @@ export function WidgetDashboard() {
   } | null>(null);
   const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Open by default for clean start
-  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      // If mobile, default to false. If desktop, default to true (or setting)
+      return !isMobile;
+    }
+    return true; // Default to open for SSR (desktop-first)
+  });
+  const [autoHideSidebar, setAutoHideSidebar] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      return isMobile ? true : getSetting('autoHideSidebar');
+    }
+    return true;
+  });
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 768;
+    }
+    return false;
+  });
 
   // Ref to store latest data for each widget to avoid re-renders but persist data during drag
   const widgetDataRef = useRef<Record<string, WidgetData>>({});
@@ -180,22 +198,9 @@ export function WidgetDashboard() {
 
   const { setNodeRef: setBoardRef, isOver: isBoardOver } = useDroppable({ id: 'widget-board' });
 
-  // Initialize sidebar state - open by default on desktop, closed on mobile
+  // Handle resize events
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-
-      const autoHide = mobile ? true : getSetting('autoHideSidebar');
-      setAutoHideSidebar(autoHide);
-
-      if (!autoHide) {
-        setSidebarOpen(true);
-      } else {
-        // Set initial state based on screen size
-        setSidebarOpen(!mobile);
-      }
-
       const handleResize = () => {
         setIsMobile(window.innerWidth < 768);
       };
