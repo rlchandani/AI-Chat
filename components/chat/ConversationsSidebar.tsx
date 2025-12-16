@@ -48,9 +48,11 @@ export function ConversationsSidebar({
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
     const pathname = usePathname();
-
     // Track if we're on desktop and load settings
     useEffect(() => {
+        setIsMobile(window.innerWidth < 768);
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
         if (typeof window !== 'undefined') {
@@ -72,9 +74,6 @@ export function ConversationsSidebar({
 
     // Show sidebar based on isOpen prop, but always show if autoHideSidebar is disabled
     const shouldShow = !autoHideSidebar ? true : isOpen;
-
-    // Load conversations when sidebar opens or conversation changes
-
 
     // Track unsaved conversations (conversations that exist but aren't saved)
     useEffect(() => {
@@ -364,6 +363,17 @@ export function ConversationsSidebar({
 
     return (
         <>
+            <AnimatePresence>
+                {isOpen && isMobile && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={onClose}
+                        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
+                    />
+                )}
+            </AnimatePresence>
             {/* Backdrop for mobile */}
             <AnimatePresence>
                 {isOpen && isMobile && (

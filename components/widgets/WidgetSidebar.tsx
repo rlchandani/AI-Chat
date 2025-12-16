@@ -24,41 +24,20 @@ interface WidgetSidebarProps {
     isOpen: boolean;
     onClose?: () => void;
     onAddWidget: (type: WidgetType) => void;
+    isMobile: boolean;
 }
 
 export function WidgetSidebar({
     isOpen,
     onClose,
     onAddWidget,
+    isMobile,
 }: WidgetSidebarProps) {
     const [search, setSearch] = useState('');
-    const [mounted, setMounted] = useState(false);
-    const [autoHideSidebar, setAutoHideSidebar] = useState(true);
-    const [isMobile, setIsMobile] = useState(false);
     const pathname = usePathname();
 
-    // Track if we're on desktop and load settings
-    useEffect(() => {
-        setMounted(true);
-        if (typeof window !== 'undefined') {
-            setAutoHideSidebar(getSetting('autoHideSidebar'));
-            setIsMobile(window.innerWidth < 768);
-        }
-
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        window.addEventListener('resize', checkMobile);
-
-        // Listen for settings updates
-        const handleSettingsUpdate = () => {
-            setAutoHideSidebar(getSetting('autoHideSidebar'));
-        };
-        window.addEventListener('settingsUpdated', handleSettingsUpdate);
-
-        return () => {
-            window.removeEventListener('resize', checkMobile);
-            window.removeEventListener('settingsUpdated', handleSettingsUpdate);
-        };
-    }, []);
+    // Resize listener now handled in parent
+    useEffect(() => { }, []);
 
     const filteredLibrary = useMemo(() => {
         if (!search) return WIDGET_LIBRARY;
@@ -66,9 +45,6 @@ export function WidgetSidebar({
             `${widget.name} ${widget.description}`.toLowerCase().includes(search.toLowerCase()),
         );
     }, [search]);
-
-    // Show sidebar based on isOpen prop, but always show if autoHideSidebar is disabled (on desktop)
-    const shouldShow = !autoHideSidebar && !isMobile ? true : isOpen;
 
     return (
         <>
@@ -89,7 +65,7 @@ export function WidgetSidebar({
             <motion.div
                 initial={false}
                 animate={{
-                    width: isMobile ? '20rem' : (shouldShow ? '20rem' : '0rem'),
+                    width: isMobile ? '20rem' : (isOpen ? '20rem' : '0rem'),
                     x: isMobile ? (isOpen ? 0 : '-100%') : 0,
                 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
@@ -100,7 +76,7 @@ export function WidgetSidebar({
                     'bg-card border-r border-border shadow-xl md:shadow-lg overflow-hidden'
                 )}
                 style={{
-                    width: '20rem', // Default width to avoid layout shift before hydration
+                    width: '20rem', // Default width to avoid layout shift
                 }}
             >
                 <div className="flex flex-col h-full">
@@ -113,7 +89,7 @@ export function WidgetSidebar({
                     </div>
 
                     {/* Mobile Navigation */}
-                    {mounted && isMobile && (
+                    {isMobile && (
                         <div className="p-2 border-b border-border space-y-1 shrink-0">
                             <Link
                                 href="/"

@@ -6,24 +6,27 @@ import { usePathname } from 'next/navigation';
 
 import {
   DndContext,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  MeasuringStrategy,
+  TouchSensor,
+  MouseSensor,
   DragEndEvent,
   DragOverEvent,
   DragStartEvent,
-  DragOverlay,
-  MouseSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
   useDroppable,
   useDraggable,
-  closestCorners,
-  MeasuringStrategy,
 } from '@dnd-kit/core';
 import {
   SortableContext,
   useSortable,
   rectSortingStrategy,
   arrayMove,
+  sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
@@ -146,8 +149,9 @@ export function WidgetDashboard() {
   } | null>(null);
   const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Open by default for clean start
   const [autoHideSidebar, setAutoHideSidebar] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Ref to store latest data for each widget to avoid re-renders but persist data during drag
   const widgetDataRef = useRef<Record<string, WidgetData>>({});
@@ -158,16 +162,71 @@ export function WidgetDashboard() {
   const pathname = usePathname();
 
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 100, tolerance: 5 } }),
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
   );
 
   const { setNodeRef: setBoardRef, isOver: isBoardOver } = useDroppable({ id: 'widget-board' });
 
+  // Initialize sidebar state - open by default on desktop, closed on mobile
   useEffect(() => {
-    // Defer loading state to next tick to avoid synchronous setState warning
-    const timer = setTimeout(() => setLoaded(true), 0);
-    return () => clearTimeout(timer);
+    if (typeof window !== 'undefined') {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+
+      const autoHide = mobile ? true : getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+
+      if (!autoHide) {
+        setSidebarOpen(true);
+      } else {
+        // Set initial state based on screen size
+        setSidebarOpen(!mobile);
+      }
+
+      const handleResize = () => {
+        setIsMobile(window.innerWidth < 768);
+      };
+
+      window.addEventListener('resize', handleResize);
+
+      // Defer loading state to next tick
+      const timer = setTimeout(() => setLoaded(true), 0);
+
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        clearTimeout(timer);
+      };
+    }
+    // Fallback for SSR
+    setLoaded(true);
+  }, []);
+
+  // Listen for settings updates to handle autoHideSidebar changes
+  useEffect(() => {
+    const handleSettingsUpdate = () => {
+      const mobile = window.innerWidth < 768;
+      const autoHide = mobile ? true : getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+      if (!autoHide) {
+        setSidebarOpen(true);
+      }
+    };
+
+    window.addEventListener('settingsUpdated', handleSettingsUpdate);
+    return () => window.removeEventListener('settingsUpdated', handleSettingsUpdate);
   }, []);
 
   // Debounced localStorage save to avoid excessive writes during drag operations
@@ -180,37 +239,6 @@ export function WidgetDashboard() {
 
     return () => clearTimeout(timeoutId);
   }, [widgets, loaded]);
-
-  // Check for auto-hide setting on mount to set initial sidebar state
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isMobile = window.innerWidth < 768;
-      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
-      setAutoHideSidebar(autoHide);
-
-      // If auto-hide is off, sidebar should be open by default on desktop
-      if (!autoHide && !isMobile) {
-        setSidebarOpen(true);
-      } else if (window.innerWidth >= 768) {
-        // Even if auto-hide is on, we can start with it open on desktop if we want
-        // matching the behavior of chat page where sidebar is open by default on desktop
-        setSidebarOpen(true);
-      }
-    }
-
-    // Listen for settings updates
-    const handleSettingsUpdate = () => {
-      const isMobile = window.innerWidth < 768;
-      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
-      setAutoHideSidebar(autoHide);
-      if (!autoHide && !isMobile) {
-        setSidebarOpen(true);
-      }
-    };
-
-    window.addEventListener('settingsUpdated', handleSettingsUpdate);
-    return () => window.removeEventListener('settingsUpdated', handleSettingsUpdate);
-  }, []);
 
   const handleAddWidget = (type: WidgetType) => {
     const preset = SIZE_PRESETS[type];
@@ -232,6 +260,9 @@ export function WidgetDashboard() {
     }
 
     setWidgets((prev) => [...prev, newWidget]);
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
   };
 
 
@@ -243,6 +274,9 @@ export function WidgetDashboard() {
     if (origin === 'library') {
       const widgetType = event.active.data.current?.widgetType as WidgetType | undefined;
       if (widgetType) {
+        if (isMobile) {
+          setSidebarOpen(false);
+        }
         setActiveDrag({
           id: undefined,
           type: widgetType,
@@ -350,13 +384,13 @@ export function WidgetDashboard() {
 
 
 
-  if (!loaded) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
-        Loading widgets...
-      </div>
-    );
-  }
+  // if (!loaded) {
+  //   return (
+  //     <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
+  //       Loading widgets...
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
@@ -364,76 +398,70 @@ export function WidgetDashboard() {
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onAddWidget={handleAddWidget}
+        isMobile={isMobile}
       />
 
-      <section className="flex-1 flex flex-col">
-        <Header
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          autoHideSidebar={autoHideSidebar}
-          rightContent={
-            <>
-              <ThemeToggle />
-              <button
-                onClick={() => setShowSettings(true)}
-                className="p-2 rounded-lg hover:bg-accent transition-colors"
-                aria-label="Settings"
-              >
-                <SettingsIcon size={20} className="text-muted-foreground" />
-              </button>
-            </>
-          }
-        />
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.Always,
+          },
+        }}
+      >
+        <section className="flex-1 flex flex-col min-w-0">
+          <Header
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            autoHideSidebar={autoHideSidebar}
+            rightContent={
+              <>
+                <ThemeToggle />
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-3 rounded-lg hover:bg-accent transition-colors"
+                  aria-label="Settings"
+                >
+                  <SettingsIcon size={20} className="text-muted-foreground" />
+                </button>
+              </>
+            }
+          />
 
-        {/* Settings Panel */}
-        <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
+          {/* Settings Panel */}
+          <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          measuring={{
-            droppable: {
-              strategy: MeasuringStrategy.Always,
-            },
-          }}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-        >
-          <div
-            ref={setBoardRef}
-            className={clsx(
-              'flex-1 overflow-y-auto custom-scrollbar p-6 transition-colors',
-              isBoardOver ? 'bg-primary/5' : undefined,
-            )}
-          >
-            {widgets.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border p-12 text-center text-muted-foreground">
-                Drag widgets from the library to get started
+          {/* Main Content Area */}
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 relative" ref={setBoardRef}>
+            {!loaded ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground">
+                Loading widgets...
               </div>
             ) : (
-              <SortableContext items={widgets.map((w) => w.id)} strategy={rectSortingStrategy}>
-                <div className="grid grid-cols-3 gap-4 auto-rows-max">
-                  {widgets.map((widget, index) =>
-                    <MemoizedSortableWidgetCard
-                      key={widget.id}
-                      widget={widget}
-                      onRemove={handleRemove}
-                      onUpdate={handleUpdateWidget}
-                      onDataChange={handleDataChange}
-                      dragDirection={dragDirection}
-                      itemIndex={index}
-                    />
-                  )}
-                </div>
-              </SortableContext>
+              <div className="mx-auto max-w-7xl">
+                <SortableContext items={widgets.map((w) => w.id)} strategy={rectSortingStrategy}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                    {widgets.map((widget) => (
+                      <SortableWidgetCard
+                        key={widget.id}
+                        widget={widget}
+                        onRemove={handleRemove}
+                        onUpdate={handleUpdateWidget}
+                        onDataChange={handleDataChange}
+                        isMobile={isMobile}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </div>
             )}
           </div>
 
-          <DragOverlay dropAnimation={{
-            duration: 250,
-            easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
-          }}>
+          <DragOverlay dropAnimation={null} zIndex={1000}>
             {activeDrag ? (
               <div
                 className="cursor-grabbing shadow-2xl origin-top-left"
@@ -462,8 +490,8 @@ export function WidgetDashboard() {
               </div>
             ) : null}
           </DragOverlay>
-        </DndContext>
-      </section>
+        </section>
+      </DndContext>
     </div>
   );
 }
@@ -478,6 +506,7 @@ function SortableWidgetCard({
   onUpdate,
   onDataChange,
   dragDirection,
+  isMobile,
 }: {
   widget: WidgetInstance;
   onRemove: (id: string) => void;
@@ -485,6 +514,7 @@ function SortableWidgetCard({
   onDataChange: (id: string, data: WidgetData) => void;
   dragDirection?: 'horizontal' | 'vertical' | null;
   itemIndex?: number;
+  isMobile: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging, isOver } = useSortable({
     id: widget.id,
@@ -552,12 +582,15 @@ function SortableWidgetCard({
             type="button"
             onClick={refreshState.onRefresh}
             disabled={refreshState.refreshing}
-            className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={clsx(
+              "p-2 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed",
+              isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            )}
             aria-label="Refresh data"
             title="Refresh data"
           >
             <RefreshCw
-              size={14}
+              size={16}
               className={refreshState.refreshing ? 'animate-spin' : ''}
             />
           </button>
@@ -568,29 +601,35 @@ function SortableWidgetCard({
         <button
           type="button"
           onClick={() => setEditTrigger(prev => prev + 1)}
-          className="p-1.5 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+          className={clsx(
+            "p-2 rounded-full hover:bg-accent/50 active:bg-accent text-muted-foreground hover:text-foreground transition-all hover:scale-110 active:scale-95",
+            isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
           aria-label="Edit widget"
           title="Edit widget"
         >
-          <Edit2 size={14} />
+          <Edit2 size={16} />
         </button>
       )}
       <button
         type="button"
         onClick={handleDeleteClick}
-        className="p-1.5 rounded-full hover:bg-destructive/20 active:bg-destructive/30 text-muted-foreground hover:text-destructive active:text-destructive transition-all opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+        className={clsx(
+          "p-2 rounded-full hover:bg-destructive/20 active:bg-destructive/30 text-muted-foreground hover:text-destructive active:text-destructive transition-all hover:scale-110 active:scale-95",
+          isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        )}
         aria-label="Remove widget"
       >
-        <Trash2 size={14} />
+        <Trash2 size={16} />
       </button>
       <button
         type="button"
-        className="p-1.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition"
+        className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing transition"
         {...attributes}
         {...listeners}
         aria-label="Drag widget"
       >
-        <GripVertical size={16} />
+        <GripVertical size={20} />
       </button>
     </>
   );

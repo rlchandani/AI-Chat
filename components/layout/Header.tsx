@@ -28,7 +28,7 @@ export function Header({
                 {/* Mobile Hamburger - Always visible on mobile, handling is usually in parent but UI here */}
                 <button
                     onClick={onToggleSidebar}
-                    className="md:hidden p-2 -ml-2 rounded-lg hover:bg-accent transition-colors"
+                    className="md:hidden p-3 -ml-2 rounded-lg hover:bg-accent transition-colors"
                     aria-label="Toggle sidebar"
                 >
                     <Menu size={20} />
@@ -38,7 +38,7 @@ export function Header({
                 {autoHideSidebar && (
                     <button
                         onClick={onToggleSidebar}
-                        className="hidden md:block p-2 rounded-lg hover:bg-accent transition-colors"
+                        className="hidden md:block p-3 rounded-lg hover:bg-accent transition-colors"
                         aria-label="Toggle sidebar"
                     >
                         <Menu size={20} />

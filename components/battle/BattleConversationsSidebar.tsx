@@ -50,9 +50,13 @@ export function BattleConversationsSidebar({
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
     const pathname = usePathname();
+    const [isMobile, setIsMobile] = useState(false);
 
     // Track if we're on desktop and load settings
     useEffect(() => {
+        setIsMobile(window.innerWidth < 768);
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
         if (typeof window !== 'undefined') {
@@ -74,8 +78,6 @@ export function BattleConversationsSidebar({
 
     // Show sidebar based on isOpen prop, but always show if autoHideSidebar is disabled
     const shouldShow = !autoHideSidebar ? true : isOpen;
-
-    // Load conversations when sidebar opens or conversation changes
 
     // Track unsaved conversations (conversations that exist but aren't saved)
     useEffect(() => {
@@ -105,6 +107,8 @@ export function BattleConversationsSidebar({
             }
         }
     }, [currentConversationId]);
+
+
 
     // Listen for storage changes to refresh conversations
     const loadConversations = useCallback(() => {
@@ -404,14 +408,7 @@ export function BattleConversationsSidebar({
         }
     };
 
-    const [isMobile, setIsMobile] = useState(false);
 
-    useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
-    }, []);
 
     return (
         <>
