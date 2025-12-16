@@ -41,6 +41,7 @@ import {
   Loader2,
   GitBranch,
   Settings as SettingsIcon,
+  Menu,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -55,28 +56,12 @@ import { StockTableWidget } from './StockTableWidget';
 import { ClockWidget } from './ClockWidget';
 import { GitHubActivityWidget, type GitHubData } from './GitHubActivityWidget';
 import { WidgetCardFrame } from './WidgetCardFrame';
+import { WidgetSidebar } from './WidgetSidebar';
+import { WIDGET_LIBRARY, type WidgetType, type WidgetDefinition } from './widget-definitions';
+import { getSetting } from '@/utils/settingsStorage';
+import { Header } from '@/components/layout/Header';
 
-const STORAGE_KEY = 'widget-dashboard-state';
-
-// Fixed width for all widgets
-const FIXED_WIDGET_WIDTH = 450;
-
-const DEFAULT_WIDGETS = [
-  { id: 'stock-demo', type: 'stock', width: FIXED_WIDGET_WIDTH, config: { ticker: 'AAPL' } },
-  { id: 'weather-demo', type: 'weather', width: FIXED_WIDGET_WIDTH, config: { location: 'San Francisco, CA', unitType: 'imperial' } },
-  { id: 'notes-demo', type: 'notes', width: FIXED_WIDGET_WIDTH },
-] as const;
-
-export type WidgetType = 'stock' | 'stock-table' | 'weather' | 'notes' | 'clock' | 'github';
-
-type WidgetDefinition = {
-  type: WidgetType;
-  name: string;
-  description: string;
-  icon: ComponentType<{ className?: string; size?: number }>;
-  accent: string;
-};
-
+// Restore WidgetInstance and WidgetData types
 export type WidgetInstance = {
   id: string;
   type: WidgetType;
@@ -94,50 +79,18 @@ export type WidgetInstance = {
 
 type WidgetData = StockUI | WeatherData | StockUI[] | GitHubData | Record<string, unknown>;
 
-const WIDGET_LIBRARY: WidgetDefinition[] = [
-  {
-    type: 'stock',
-    name: 'Stock Watch',
-    description: 'Track real-time market moves',
-    icon: TrendingUp,
-    accent: 'from-emerald-500/20 via-transparent to-teal-500/20',
-  },
-  {
-    type: 'stock-table',
-    name: 'Stock Table',
-    description: 'Compare multiple stocks at once',
-    icon: TrendingUp,
-    accent: 'from-emerald-500/20 via-transparent to-teal-500/20',
-  },
-  {
-    type: 'weather',
-    name: 'Weather Now',
-    description: 'Monitor live conditions',
-    icon: Sun,
-    accent: 'from-sky-500/20 via-transparent to-blue-500/20',
-  },
-  {
-    type: 'notes',
-    name: 'Daily Notes',
-    description: 'Capture quick ideas',
-    icon: NotebookPen,
-    accent: 'from-purple-500/20 via-transparent to-fuchsia-500/20',
-  },
-  {
-    type: 'clock',
-    name: 'World Clock',
-    description: 'Stay in sync across timezones',
-    icon: Clock,
-    accent: 'from-amber-500/20 via-transparent to-orange-500/20',
-  },
-  {
-    type: 'github',
-    name: 'GitHub Activity',
-    description: 'Track commits and contributions',
-    icon: GitBranch,
-    accent: 'from-slate-500/20 via-transparent to-gray-500/20',
-  },
-];
+const STORAGE_KEY = 'widget-dashboard-state';
+
+// Fixed width for all widgets
+const FIXED_WIDGET_WIDTH = 450;
+
+const DEFAULT_WIDGETS = [
+  { id: 'stock-demo', type: 'stock', width: FIXED_WIDGET_WIDTH, config: { ticker: 'AAPL' } },
+  { id: 'weather-demo', type: 'weather', width: FIXED_WIDGET_WIDTH, config: { location: 'San Francisco, CA', unitType: 'imperial' } },
+  { id: 'notes-demo', type: 'notes', width: FIXED_WIDGET_WIDTH },
+] as const;
+
+// Widget definitions moved to widget-definitions.ts
 
 const SIZE_PRESETS: Record<WidgetType, { width: number }> = {
   stock: { width: FIXED_WIDGET_WIDTH },
@@ -180,7 +133,7 @@ export function WidgetDashboard() {
   });
 
   const [loaded, setLoaded] = useState(false);
-  const [search, setSearch] = useState('');
+  // Search state moved to WidgetSidebar
   const [activeDrag, setActiveDrag] = useState<{
     id?: string;
     type: WidgetType;
@@ -191,6 +144,8 @@ export function WidgetDashboard() {
   } | null>(null);
   const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(true);
 
   // Ref to store latest data for each widget to avoid re-renders but persist data during drag
   const widgetDataRef = useRef<Record<string, WidgetData>>({});
@@ -224,12 +179,36 @@ export function WidgetDashboard() {
     return () => clearTimeout(timeoutId);
   }, [widgets, loaded]);
 
-  const filteredLibrary = useMemo(() => {
-    if (!search) return WIDGET_LIBRARY;
-    return WIDGET_LIBRARY.filter((widget) =>
-      `${widget.name} ${widget.description}`.toLowerCase().includes(search.toLowerCase()),
-    );
-  }, [search]);
+  // Check for auto-hide setting on mount to set initial sidebar state
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+
+      // If auto-hide is off, sidebar should be open by default on desktop
+      if (!autoHide && !isMobile) {
+        setSidebarOpen(true);
+      } else if (window.innerWidth >= 768) {
+        // Even if auto-hide is on, we can start with it open on desktop if we want
+        // matching the behavior of chat page where sidebar is open by default on desktop
+        setSidebarOpen(true);
+      }
+    }
+
+    // Listen for settings updates
+    const handleSettingsUpdate = () => {
+      const isMobile = window.innerWidth < 768;
+      const autoHide = isMobile ? true : getSetting('autoHideSidebar');
+      setAutoHideSidebar(autoHide);
+      if (!autoHide && !isMobile) {
+        setSidebarOpen(true);
+      }
+    };
+
+    window.addEventListener('settingsUpdated', handleSettingsUpdate);
+    return () => window.removeEventListener('settingsUpdated', handleSettingsUpdate);
+  }, []);
 
   const handleAddWidget = (type: WidgetType) => {
     const preset = SIZE_PRESETS[type];
@@ -378,67 +357,31 @@ export function WidgetDashboard() {
   }
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <aside className="w-72 border-r border-border bg-card/40 backdrop-blur-sm flex flex-col">
-        <div className="px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <Puzzle size={16} /> Widget Library
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">Drag widgets into your workspace</p>
-          <div className="mt-4 relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search widgets"
-              className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-            />
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
-          {filteredLibrary.map((widget) => (
-            <LibraryWidget key={widget.type} widget={widget} onAdd={handleAddWidget} />
-          ))}
-        </div>
-      </aside>
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+      <WidgetSidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onAddWidget={handleAddWidget}
+      />
 
       <section className="flex-1 flex flex-col">
-        <header className="h-14 border-b border-border flex items-center justify-between px-4 md:px-6 pt-2 bg-background/80 backdrop-blur-md z-50 sticky top-0">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <img
-                src="/logo.png"
-                alt="Logo"
-                className="h-8 w-8 object-contain"
-              />
-              <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
-                iRedlof
-              </div>
-              <div className="hidden md:flex items-center gap-1 ml-4 rounded-full bg-muted/40 p-1">
-                <NavTab href="/" currentPath={pathname}>
-                  Chat
-                </NavTab>
-                <NavTab href="/battle" currentPath={pathname}>
-                  Battle
-                </NavTab>
-                <NavTab href="/widgets" currentPath={pathname}>
-                  Widgets
-                </NavTab>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="hidden lg:block text-sm text-muted-foreground">Drag widgets to rearrange or drop new ones in.</p>
-            <ThemeToggle />
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-lg hover:bg-accent transition-colors"
-              aria-label="Settings"
-            >
-              <SettingsIcon size={20} className="text-muted-foreground" />
-            </button>
-          </div>
-        </header>
+        <Header
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          autoHideSidebar={autoHideSidebar}
+          rightContent={
+            <>
+              <ThemeToggle />
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 rounded-lg hover:bg-accent transition-colors"
+                aria-label="Settings"
+              >
+                <SettingsIcon size={20} className="text-muted-foreground" />
+              </button>
+            </>
+          }
+        />
 
         {/* Settings Panel */}
         <Settings isOpen={showSettings} onClose={() => setShowSettings(false)} />
@@ -516,55 +459,9 @@ export function WidgetDashboard() {
   );
 }
 
-function NavTab({ href, currentPath, children }: { href: string; currentPath: string | null; children: ReactNode }) {
-  const isActive = currentPath === href;
-  return (
-    <Link
-      href={href}
-      className={clsx(
-        'px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-        isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-      )}
-    >
-      {children}
-    </Link>
-  );
-}
 
-function LibraryWidget({ widget, onAdd }: { widget: WidgetDefinition; onAdd: (type: WidgetType) => void }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `library-${widget.type}`,
-    data: { widgetType: widget.type, from: 'library' },
-  });
 
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: transform ? CSS.Translate.toString(transform) : undefined }}
-      className={clsx(
-        'rounded-2xl border border-border bg-background/80 p-4 shadow-sm cursor-grab active:cursor-grabbing transition',
-        isDragging ? 'ring-2 ring-primary/40' : undefined,
-        `bg-gradient-to-r ${widget.accent}`,
-      )}
-      {...attributes}
-      {...listeners}
-    >
-      <div className="flex items-center gap-3">
-        <widget.icon className="h-10 w-10 text-foreground/80" />
-        <div className="flex-1">
-          <p className="text-sm font-semibold">{widget.name}</p>
-          <p className="text-xs text-muted-foreground">{widget.description}</p>
-        </div>
-      </div>
-      <button
-        onClick={() => onAdd(widget.type)}
-        className="mt-4 w-full rounded-xl border border-border/60 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-background/30"
-      >
-        Add to board
-      </button>
-    </div>
-  );
-}
+// LibraryWidget moved to WidgetSidebar.tsx
 
 function SortableWidgetCard({
   widget,

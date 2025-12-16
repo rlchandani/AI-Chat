@@ -398,9 +398,15 @@ export function ConversationsSidebar({
             >
                 {/* Header */}
                 <div className="h-14 flex items-center justify-between px-4 border-b border-border">
-                    <h2 className="text-lg font-semibold">
-                        {isSelectMode ? `${selectedIds.size} selected` : 'Conversations'}
-                    </h2>
+                    {isSelectMode ? (
+                        <h2 className="text-lg font-semibold">
+                            {selectedIds.size} selected
+                        </h2>
+                    ) : (
+                        <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                            <MessageSquare size={16} /> Conversations
+                        </div>
+                    )}
                     <div className="flex items-center gap-1">
                         {isSelectMode ? (
                             <>
@@ -443,15 +449,7 @@ export function ConversationsSidebar({
                                 >
                                     <Plus size={20} />
                                 </button>
-                                {onClose && mounted && autoHideSidebar && (
-                                    <button
-                                        onClick={onClose}
-                                        className="p-2 rounded-lg hover:bg-accent transition-colors"
-                                        aria-label="Close sidebar"
-                                    >
-                                        <X size={20} />
-                                    </button>
-                                )}
+
                             </>
                         )}
                     </div>

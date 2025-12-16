@@ -19,6 +19,7 @@ import { ApiKeyError } from '@/hooks/use-manual-chat';
 import { Menu, AlertCircle, Settings as SettingsIcon, MessageSquare, Swords, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
+import { Header } from '@/components/layout/Header';
 
 export default function BattlePage() {
   const router = useRouter();
@@ -621,64 +622,27 @@ export default function BattlePage() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-14 border-b border-border flex items-center justify-between px-4 md:px-6 pt-2 bg-background/80 backdrop-blur-md z-50 sticky top-0">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="md:hidden p-2 -ml-2 rounded-lg hover:bg-accent transition-colors"
-              aria-label="Toggle sidebar"
-            >
-              <Menu size={20} />
-            </button>
-            {autoHideSidebar && (
+        {/* Header */}
+        <Header
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          autoHideSidebar={autoHideSidebar}
+          rightContent={
+            <>
+              {mounted && currentConversationId && (
+                <ShareConversation conversationId={currentConversationId} />
+              )}
+              <ThemeToggle />
               <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="hidden md:block p-2 rounded-lg hover:bg-accent transition-colors"
-                aria-label="Toggle sidebar"
+                onClick={() => setShowSettings(true)}
+                className="p-2 rounded-lg hover:bg-accent transition-colors"
+                aria-label="Settings"
               >
-                <Menu size={20} />
+                <SettingsIcon size={20} className="text-muted-foreground" />
               </button>
-            )}
-            <div className="flex items-center gap-2">
-              <img
-                src="/logo.png"
-                alt="Logo"
-                className="h-8 w-8 object-contain"
-              />
-              <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
-                iRedlof
-              </div>
-              <div className="hidden md:flex items-center gap-1 ml-4 rounded-full bg-muted/40 p-1">
-                <NavTab href="/" currentPath={pathname}>
-                  <MessageSquare size={16} />
-                  Chat
-                </NavTab>
-                <NavTab href="/battle" currentPath={pathname}>
-                  <Swords size={16} />
-                  Battle
-                </NavTab>
-                <NavTab href="/widgets" currentPath={pathname}>
-                  <LayoutGrid size={16} />
-                  Widgets
-                </NavTab>
-              </div>
-
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {mounted && currentConversationId && (
-              <ShareConversation conversationId={currentConversationId} />
-            )}
-            <ThemeToggle />
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-lg hover:bg-accent transition-colors"
-              aria-label="Settings"
-            >
-              <SettingsIcon size={20} className="text-muted-foreground" />
-            </button>
-          </div>
-        </header>
+            </>
+          }
+        />
 
         {/* Settings Panel */}
         <Settings
@@ -842,4 +806,3 @@ function NavTab({ href, currentPath, children }: { href: string; currentPath: st
     </Link>
   );
 }
-

@@ -20,6 +20,7 @@ import { PinUnlockModal } from '@/components/chat/PinUnlockModal';
 import { getSelectedModel, DEFAULT_MODEL, getModelInfo, calculateCost, setSelectedModel as saveSelectedModel } from '@/utils/modelStorage';
 import { getCurrentConversationId, createNewConversation, loadChatHistory, loadUsageStats, getConversationMetadata, getUnsavedConversationMetadata, setCurrentConversationId as saveCurrentConversationId, findEmptyConversation, saveConversationModel, loadConversationModel, saveChatHistory, saveUsageStats, type Message } from '@/utils/chatStorage';
 import { getSetting, apiKeysNeedUnlock, unlockApiKeys, isApiKeyLocked } from '@/utils/settingsStorage';
+import { Header } from '@/components/layout/Header';
 
 export default function Home() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function Home() {
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [mounted, setMounted] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Closed by default (mobile-first), opens on desktop via effect
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Open by default for clean start, adjusts via effect
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
   const [cumulativeUsage, setCumulativeUsage] = useState<{ tokens: number; cost: number } | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -428,109 +429,76 @@ export default function Home() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-14 border-b border-border flex items-center justify-between px-4 md:px-6 pt-2 bg-background/80 backdrop-blur-md z-50 sticky top-0">
-          <div className="flex items-center gap-3">
-            {autoHideSidebar && (
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 rounded-lg hover:bg-accent transition-colors"
-                aria-label="Toggle sidebar"
-              >
-                <Menu size={20} />
-              </button>
-            )}
-            <div className="flex items-center gap-2">
-              <Image
-                src="/logo.png"
-                alt="Logo"
-                width={32}
-                height={32}
-                className="h-8 w-8 object-contain"
-              />
-              <div className="font-semibold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
-                iRedlof
-              </div>
-              <div className="hidden md:flex items-center gap-1 ml-4 rounded-full bg-muted/40 p-1">
-                <NavTab href="/" currentPath={pathname}>
-                  <MessageSquare size={16} />
-                  Chat
-                </NavTab>
-                <NavTab href="/battle" currentPath={pathname}>
-                  <Swords size={16} />
-                  Battle
-                </NavTab>
-                <NavTab href="/widgets" currentPath={pathname}>
-                  <LayoutGrid size={16} />
-                  Widgets
-                </NavTab>
-              </div>
-            </div>
-          </div>
+        <Header
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          autoHideSidebar={autoHideSidebar}
+          rightContent={
+            <>
+              {/* Context Window Info - Show cumulative tokens from storage or current usage */}
+              {mounted && (cumulativeUsage || usageInfo) && (() => {
+                const modelInfo = getModelInfo(selectedModel);
+                const contextWindow = modelInfo?.contextWindow || 0;
+                // Use cumulative tokens from storage if available, otherwise use current usageInfo
+                const totalTokens = cumulativeUsage?.tokens || usageInfo?.totalTokens || 0;
+                const usagePercent = contextWindow > 0 ? (totalTokens / contextWindow) * 100 : 0;
+                const formattedTokens = totalTokens.toLocaleString();
+                const formattedLimit = contextWindow > 0 ? (contextWindow / 1000000).toFixed(contextWindow >= 1000000 ? 0 : 1) + 'M' : 'N/A';
 
-          <div className="flex items-center gap-3">
-            {/* Context Window Info - Show cumulative tokens from storage or current usage */}
-            {mounted && (cumulativeUsage || usageInfo) && (() => {
-              const modelInfo = getModelInfo(selectedModel);
-              const contextWindow = modelInfo?.contextWindow || 0;
-              // Use cumulative tokens from storage if available, otherwise use current usageInfo
-              const totalTokens = cumulativeUsage?.tokens || usageInfo?.totalTokens || 0;
-              const usagePercent = contextWindow > 0 ? (totalTokens / contextWindow) * 100 : 0;
-              const formattedTokens = totalTokens.toLocaleString();
-              const formattedLimit = contextWindow > 0 ? (contextWindow / 1000000).toFixed(contextWindow >= 1000000 ? 0 : 1) + 'M' : 'N/A';
+                return (
+                  <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-2 h-2 rounded-full ${usagePercent > 80 ? 'bg-red-500' : usagePercent > 50 ? 'bg-yellow-500' : 'bg-primary/60'}`}></div>
+                      <span className="text-muted-foreground">
+                        <span className="font-medium text-foreground">{formattedTokens}</span>
+                        {contextWindow > 0 && (
+                          <>
+                            <span className="text-muted-foreground"> / {formattedLimit}</span>
+                            <span className="text-muted-foreground ml-1">
+                              ({usagePercent.toFixed(1)}%)
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* Cost Info - Show cumulative cost from storage */}
+              {mounted && (cumulativeUsage || usageInfo) && (() => {
+                // Use cumulative cost from storage if available, otherwise calculate from current usage
+                let cost = cumulativeUsage?.cost;
+                if (cost === undefined && usageInfo) {
+                  cost = calculateCost(
+                    usageInfo.promptTokens,
+                    usageInfo.completionTokens,
+                    selectedModel
+                  );
+                }
+                const formattedCost = (cost || 0) > 0 ? (cost || 0).toFixed(4) : '0.0000';
 
-              return (
-                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full ${usagePercent > 80 ? 'bg-red-500' : usagePercent > 50 ? 'bg-yellow-500' : 'bg-primary/60'}`}></div>
+                return (
+                  <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border text-xs">
                     <span className="text-muted-foreground">
-                      <span className="font-medium text-foreground">{formattedTokens}</span>
-                      {contextWindow > 0 && (
-                        <>
-                          <span className="text-muted-foreground"> / {formattedLimit}</span>
-                          <span className="text-muted-foreground ml-1">
-                            ({usagePercent.toFixed(1)}%)
-                          </span>
-                        </>
-                      )}
+                      <span className="font-medium text-foreground">${formattedCost}</span>
                     </span>
                   </div>
-                </div>
-              );
-            })()}
-            {/* Cost Info - Show cumulative cost from storage */}
-            {mounted && (cumulativeUsage || usageInfo) && (() => {
-              // Use cumulative cost from storage if available, otherwise calculate from current usage
-              let cost = cumulativeUsage?.cost;
-              if (cost === undefined && usageInfo) {
-                cost = calculateCost(
-                  usageInfo.promptTokens,
-                  usageInfo.completionTokens,
-                  selectedModel
                 );
-              }
-              const formattedCost = (cost || 0) > 0 ? (cost || 0).toFixed(4) : '0.0000';
-
-              return (
-                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border text-xs">
-                  <span className="text-muted-foreground">
-                    <span className="font-medium text-foreground">${formattedCost}</span>
-                  </span>
-                </div>
-              );
-            })()}
-            {mounted && currentConversationId && (
-              <ShareConversation conversationId={currentConversationId} />
-            )}
-            <ThemeToggle />
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-lg hover:bg-accent transition-colors"
-              aria-label="Settings"
-            >
-              <SettingsIcon size={20} className="text-muted-foreground" />
-            </button>
-          </div>
-        </header>
+              })()}
+              {mounted && currentConversationId && (
+                <ShareConversation conversationId={currentConversationId} />
+              )}
+              <ThemeToggle />
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 rounded-lg hover:bg-accent transition-colors"
+                aria-label="Settings"
+              >
+                <SettingsIcon size={20} className="text-muted-foreground" />
+              </button>
+            </>
+          }
+        />
 
         {/* Settings Panel */}
         <Settings
@@ -615,18 +583,5 @@ export default function Home() {
         onCancel={() => setShowPinUnlock(false)}
       />
     </main>
-  );
-}
-
-function NavTab({ href, currentPath, children }: { href: string; currentPath: string | null; children: ReactNode }) {
-  const isActive = currentPath === href;
-  return (
-    <Link
-      href={href}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-        }`}
-    >
-      {children}
-    </Link>
   );
 }
