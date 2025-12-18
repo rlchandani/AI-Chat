@@ -1,14 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, TrendingUp, Check, X, Share2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import * as htmlToImage from 'html-to-image';
-
+import { Check, Loader2, Share2, TrendingUp, X } from 'lucide-react';
+import { useCardShare } from '@/hooks/use-card-share';
 import { StockUI } from '@/types/stock';
 
-// Use centralized StockUI type but alias it to StockData for local compatibility if needed,
-// or just replace usages. Let's alias it for minimal diff.
 type StockData = StockUI;
 
 interface StockTableWidgetProps {
@@ -66,84 +63,23 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
-  const [isSharing, setIsSharing] = useState(false);
-  const [shareSuccess, setShareSuccess] = useState(false);
+
+  const { share, isSharing, shareSuccess } = useCardShare();
   const hasFetchedRef = useRef(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Share card as image - Gold Standard implementation
+  // Share card as image
   const handleShare = useCallback(async () => {
-    if (!cardRef.current || isSharing) return;
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+    const fileName = `stock-table-${timestamp}.png`;
 
-    setIsSharing(true);
-    try {
-      const node = cardRef.current;
-
-      // 1. Wait for fonts to be ready to prevent "glitchy" text (FOUT fix)
-      await document.fonts.ready;
-
-      // Detect if dark mode - use slate colors that match the card
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      const bgColor = isDarkMode ? '#1e293b' : '#f8fafc'; // slate-800 / slate-50
-
-      // Capture the card as PNG blob using html-to-image (Gold Standard config)
-      const blob = await htmlToImage.toBlob(node, {
-        pixelRatio: window.devicePixelRatio || 2, // Retina display support
-        backgroundColor: bgColor,                  // Prevent transparent artifacts
-        cacheBust: true,                          // CORS fix for external images
-        width: node.scrollWidth,                  // Layout stability
-        height: node.scrollHeight,
-        style: { transform: 'none', margin: '0' }, // Prevent layout shifts
-      });
-
-      if (!blob) {
-        throw new Error('Failed to create image');
-      }
-
-      // Generate unique filename with date and time (YYYY-MM-DD_HH-MM-SS)
-      const now = new Date();
-      const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
-      const fileName = `stock-table-${timestamp}.png`;
-
-      // Try Web Share API first (works on mobile and some desktop browsers)
-      if (navigator.share && navigator.canShare) {
-        const file = new File([blob], fileName, { type: 'image/png' });
-        const shareData = {
-          title: 'Stock Table',
-          text: 'Check out this stock comparison from iRedlof',
-          files: [file],
-        };
-
-        if (navigator.canShare(shareData)) {
-          await navigator.share(shareData);
-          setShareSuccess(true);
-          setTimeout(() => setShareSuccess(false), 2000);
-          return;
-        }
-      }
-
-      // Fallback: Download the image
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      setShareSuccess(true);
-      setTimeout(() => setShareSuccess(false), 2000);
-    } catch (err) {
-      // Silently ignore AbortError (user cancelled the share dialog)
-      if (err instanceof Error && err.name === 'AbortError') {
-        return;
-      }
-      console.error('Share error:', err);
-    } finally {
-      setIsSharing(false);
-    }
-  }, [isSharing]);
+    await share(cardRef, {
+      fileName,
+      title: 'Stock Table',
+      text: 'Check out this stock comparison from iRedlof',
+    });
+  }, [share]);
 
   // Listen for edit events from widget header
   useEffect(() => {
@@ -186,10 +122,9 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
 
   useEffect(() => {
     if (initialTickers && !hasFetchedRef.current && !initialData) {
-      hasFetchedRef.current = true; // Mark as fetched to prevent duplicate calls
+      hasFetchedRef.current = true;
       fetchStocks(initialTickers);
     }
-
   }, [initialTickers, initialData, fetchStocks]);
 
   const handleSave = () => {
@@ -238,7 +173,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
     }
   }, [tickers, processStocks]);
 
-  // Stabilize handleRefresh for parent consumption to prevent infinite loops
+  // Stabilize handleRefresh for parent consumption
   const handleRefreshRef = useRef(handleRefresh);
   useEffect(() => {
     handleRefreshRef.current = handleRefresh;
@@ -264,15 +199,8 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
   };
 
   const formatPercent = (value: number) => {
-    const absolute = Math.abs(value).toFixed(2);
-    const sign = value > 0 ? '+' : value < 0 ? '−' : '';
-    return `${sign}${absolute}%`;
-  };
-
-  const formatAmount = (value: number) => {
-    const absolute = Math.abs(value).toFixed(2);
-    const sign = value > 0 ? '+' : value < 0 ? '−' : '';
-    return `${sign}$${absolute}`;
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${value.toFixed(2)}%`;
   };
 
   if (isEditing && isEditable) {
@@ -343,7 +271,7 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
 
   return (
     <div className="relative group w-full h-full">
-      {/* Share Button - positioned outside the captured area */}
+      {/* Share Button */}
       <button
         onClick={handleShare}
         disabled={isSharing}
@@ -362,89 +290,73 @@ export function StockTableWidget({ tickers: initialTickers, onUpdate, isEditable
 
       <div
         ref={cardRef}
-        className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-4 flex flex-col relative"
+        className="w-full h-full rounded-2xl border border-border bg-card shadow-sm p-4 flex flex-col relative overflow-hidden"
       >
-        <div className="flex-1 overflow-auto">
-          <table className="text-sm">
-            <thead className="sticky top-0 bg-background/95 backdrop-blur-sm z-10">
-              <tr className="border-b border-border/70">
-                <th className="text-left py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Ticker</th>
-                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Price</th>
-                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">Change</th>
-                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">YTD</th>
-                <th className="text-right py-2 px-2 text-xs uppercase tracking-wide text-foreground font-semibold">vs SPY</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stocks.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">
-                    No stock data available
-                  </td>
-                </tr>
-              ) : (
-                stocks.map((stock, index) => (
-                  <motion.tr
-                    key={stock.ticker}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="border-b border-border/30 hover:bg-background/50 transition-colors"
-                  >
-                    <td className="py-2.5 px-2">
-                      <div className="font-semibold text-foreground">{stock.ticker}</div>
-                      {stock.name && stock.name !== stock.ticker && (
-                        <div className="text-xs text-muted-foreground truncate max-w-[120px]">{stock.name}</div>
-                      )}
-                      {stock.error && (
-                        <div className="text-xs text-red-500">{stock.error}</div>
-                      )}
-                    </td>
-                    <td className="text-right py-2.5 px-2">
-                      <div className="font-semibold text-foreground">
-                        {stock.price > 0 ? formatPrice(stock.price) : '—'}
-                      </div>
-                    </td>
-                    <td className="text-right py-2.5 px-2">
-                      <div className={`font-semibold flex items-center justify-end gap-1 ${stock.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                        }`}>
-                        <span>{stock.change >= 0 ? '▲' : '▼'}</span>
-                        {stock.changePercent !== 0 ? formatPercent(stock.changePercent) : '—'}
-                      </div>
-                      {stock.change !== 0 && (
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {formatAmount(stock.change)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="text-right py-2.5 px-2">
-                      <div className={`font-semibold flex items-center justify-end gap-1 ${stock.ytdChangePercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                        }`}>
-                        <span>{stock.ytdChangePercent >= 0 ? '▲' : '▼'}</span>
-                        {stock.ytdChangePercent !== 0 ? formatPercent(stock.ytdChangePercent) : '—'}
-                      </div>
-                      {stock.ytdChangeAmount !== 0 && (
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {formatAmount(stock.ytdChangeAmount)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="text-right py-2.5 px-2">
-                      {stock.vsSpyPercent !== undefined ? (
-                        <div className={`font-semibold flex items-center justify-end gap-1 ${stock.vsSpyPercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                          }`}>
-                          <span>{stock.vsSpyPercent >= 0 ? '▲' : '▼'}</span>
-                          {formatPercent(stock.vsSpyPercent)}
-                        </div>
-                      ) : (
-                        <div className="text-muted-foreground">—</div>
-                      )}
-                    </td>
-                  </motion.tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="flex-1 overflow-auto space-y-0 divide-y divide-border/40">
+          {stocks.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              No stock data available
+            </div>
+          ) : (
+            stocks.map((stock, index) => (
+              <motion.div
+                key={stock.ticker}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="py-3 first:pt-0 last:pb-0"
+              >
+                {/* Row 1: Ticker/Name on left, Price/Change on right */}
+                <div className="flex items-start justify-between gap-4">
+                  {/* Left: Ticker & Name */}
+                  <div className="flex-1 min-w-0">
+                    {/* Show header label only for first stock */}
+                    {index === 0 && (
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Ticker</div>
+                    )}
+                    <div className="text-lg font-bold text-foreground leading-tight">{stock.ticker}</div>
+                    {stock.name && stock.name !== stock.ticker && (
+                      <div className="text-xs text-muted-foreground truncate leading-tight">{stock.name}</div>
+                    )}
+                    {stock.error && (
+                      <div className="text-xs text-red-500 truncate">{stock.error}</div>
+                    )}
+                  </div>
+
+                  {/* Right: Price & 24h Change */}
+                  <div className="text-right flex-shrink-0">
+                    {/* Show header label only for first stock */}
+                    {index === 0 && (
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Price</div>
+                    )}
+                    <div className="text-lg font-bold text-foreground leading-tight">
+                      {stock.price > 0 ? formatPrice(stock.price) : '—'}
+                    </div>
+                    <div className={`text-sm font-medium leading-tight ${stock.changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {stock.changePercent !== 0 ? formatPercent(stock.changePercent) : '—'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Row 2: YTD and vs SPY info */}
+                <div className="mt-1 text-xs text-right">
+                  <span className="text-foreground">YTD: </span>
+                  <span className={stock.ytdChangePercent >= 0 ? 'text-green-500' : 'text-red-500'}>
+                    {formatPercent(stock.ytdChangePercent)}
+                  </span>
+                  <span className="text-foreground mx-1.5">|</span>
+                  <span className="text-foreground">YTD vs SPY: </span>
+                  {stock.vsSpyPercent !== undefined ? (
+                    <span className={stock.vsSpyPercent >= 0 ? 'text-green-500' : 'text-red-500'}>
+                      {formatPercent(stock.vsSpyPercent)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </div>
+              </motion.div>
+            ))
+          )}
         </div>
         <div className="text-[11px] uppercase tracking-wider text-foreground/80 text-right mt-2 pt-2 border-t border-border/30">
           iRedlof Intelligence

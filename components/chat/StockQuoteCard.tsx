@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Loader2, TrendingUp, Share2, Check } from 'lucide-react';
-import * as htmlToImage from 'html-to-image';
-
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Loader2, Share2, TrendingUp } from 'lucide-react';
+import { useCardShare } from '@/hooks/use-card-share';
 import { StockUI } from '@/types/stock';
 
 interface StockQuoteCardProps {
@@ -76,8 +75,8 @@ export function StockQuoteCard({
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
-    const [isSharing, setIsSharing] = useState(false);
-    const [shareSuccess, setShareSuccess] = useState(false);
+
+    const { share, isSharing, shareSuccess } = useCardShare();
     const hasFetchedRef = useRef(false);
     const cardRef = useRef<HTMLDivElement>(null);
 
@@ -110,79 +109,19 @@ export function StockQuoteCard({
 
     // Share card as image - Gold Standard implementation
     const handleShare = useCallback(async () => {
-        if (!cardRef.current || isSharing) return;
+        if (!stockData) return;
 
-        setIsSharing(true);
-        try {
-            const node = cardRef.current;
+        // Generate unique filename with date and time (YYYY-MM-DD_HH-MM-SS)
+        const now = new Date();
+        const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+        const fileName = `${stockData.ticker || 'stock'}-quote-${timestamp}.png`;
 
-            // 1. Wait for fonts to be ready to prevent "glitchy" text (FOUT fix)
-            await document.fonts.ready;
-
-            // Detect if dark mode - use slate colors that match the card
-            const isDarkMode = document.documentElement.classList.contains('dark');
-            const bgColor = isDarkMode ? '#1e293b' : '#f8fafc'; // slate-800 / slate-50
-
-            // Capture the card as PNG blob using html-to-image (Gold Standard config)
-            const blob = await htmlToImage.toBlob(node, {
-                pixelRatio: window.devicePixelRatio || 2, // Retina display support
-                backgroundColor: bgColor,                  // Prevent transparent artifacts
-                cacheBust: true,                          // CORS fix for external images
-                width: node.scrollWidth,                  // Layout stability
-                height: node.scrollHeight,
-                style: { transform: 'none', margin: '0' }, // Prevent layout shifts
-            });
-
-            if (!blob) {
-                throw new Error('Failed to create image');
-            }
-
-            // Generate unique filename with date and time (YYYY-MM-DD_HH-MM-SS)
-            const now = new Date();
-            const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
-            const fileName = `${stockData?.ticker || 'stock'}-quote-${timestamp}.png`;
-
-            // Try Web Share API first (works on mobile and some desktop browsers)
-            if (navigator.share && navigator.canShare) {
-                const file = new File([blob], fileName, { type: 'image/png' });
-                const shareData = {
-                    title: `${stockData?.ticker} Stock Quote`,
-                    text: `${stockData?.name} (${stockData?.ticker}) - $${stockData?.price?.toFixed(2)}`,
-                    files: [file],
-                };
-
-                if (navigator.canShare(shareData)) {
-                    await navigator.share(shareData);
-                    setShareSuccess(true);
-                    setTimeout(() => setShareSuccess(false), 2000);
-                    return;
-                }
-            }
-
-            // Fallback: Download the image
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            setShareSuccess(true);
-            setTimeout(() => setShareSuccess(false), 2000);
-        } catch (err) {
-            // Silently ignore AbortError (user cancelled the share dialog)
-            if (err instanceof Error && err.name === 'AbortError') {
-                // User cancelled - not an error, just return silently
-                return;
-            }
-            // Log actual errors
-            console.error('Share error:', err);
-        } finally {
-            setIsSharing(false);
-        }
-    }, [stockData, isSharing]);
+        await share(cardRef, {
+            fileName,
+            title: `${stockData.ticker} Stock Quote`,
+            text: `${stockData.name} (${stockData.ticker}) - $${stockData.price?.toFixed(2)}`,
+        });
+    }, [stockData, share]);
 
     // Stabilize handleRefresh for parent consumption to prevent infinite loops
     const handleRefreshRef = useRef(handleRefresh);
@@ -382,4 +321,3 @@ export function StockQuoteCard({
         </div>
     );
 }
-

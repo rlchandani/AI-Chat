@@ -134,10 +134,10 @@ export async function GET(req: NextRequest) {
 
       if (historicalData && Array.isArray(historicalData) && historicalData.length > 0) {
         // Get the first trading day of the year (first entry in the array)
-        // Use open price for YTD calculation (price at the start of the first trading day)
+        // Use CLOSE price for YTD calculation (matches Google Finance methodology)
         const firstDay: any = historicalData[0];
-        const yearStartPrice = (typeof firstDay.open === 'number' ? firstDay.open :
-          (typeof firstDay.close === 'number' ? firstDay.close : currentPrice));
+        const yearStartPrice = (typeof firstDay.close === 'number' ? firstDay.close :
+          (typeof firstDay.open === 'number' ? firstDay.open : currentPrice));
 
         if (yearStartPrice > 0 && currentPrice > 0) {
           ytdChangePercent = ((currentPrice - yearStartPrice) / yearStartPrice) * 100;
@@ -171,9 +171,9 @@ export async function GET(req: NextRequest) {
 
         if (spyHistoricalData && Array.isArray(spyHistoricalData) && spyHistoricalData.length > 0) {
           const spyFirstDay: any = spyHistoricalData[0];
-          // Use open price for YTD calculation (price at the start of the first trading day)
-          const spyYearStartPrice = (typeof spyFirstDay.open === 'number' ? spyFirstDay.open :
-            (typeof spyFirstDay.close === 'number' ? spyFirstDay.close : spyCurrentPrice));
+          // Use CLOSE price for YTD calculation (matches Google Finance methodology)
+          const spyYearStartPrice = (typeof spyFirstDay.close === 'number' ? spyFirstDay.close :
+            (typeof spyFirstDay.open === 'number' ? spyFirstDay.open : spyCurrentPrice));
 
           if (spyYearStartPrice > 0 && spyCurrentPrice > 0) {
             spyYtdChangePercent = ((spyCurrentPrice - spyYearStartPrice) / spyYearStartPrice) * 100;

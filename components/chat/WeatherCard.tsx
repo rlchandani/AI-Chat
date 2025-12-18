@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Cloud, Sun, Wind, Droplets, Thermometer, Eye, Loader2, Gauge, MapPin, MapPinOff, Share2, Check } from 'lucide-react';
+import { Check, Cloud, Droplets, Eye, Gauge, Loader2, MapPin, MapPinOff, Share2, Sun, Thermometer, Wind } from 'lucide-react';
 import clsx from 'clsx';
-import * as htmlToImage from 'html-to-image';
+import { useCardShare } from '@/hooks/use-card-share';
 
 interface WeatherCardProps {
     location?: string;
@@ -93,8 +93,8 @@ export function WeatherCard({
     const [locationPermission, setLocationPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
     const [isRequestingLocation, setIsRequestingLocation] = useState(false);
     const [autoLocationEnabled, setAutoLocationEnabled] = useState(useAutoLocation);
-    const [isSharing, setIsSharing] = useState(false);
-    const [shareSuccess, setShareSuccess] = useState(false);
+
+    const { share, isSharing, shareSuccess } = useCardShare();
     const hasFetchedRef = useRef(false);
     const cardRef = useRef<HTMLDivElement>(null);
 
@@ -363,78 +363,20 @@ export function WeatherCard({
 
     // Share card as image - Gold Standard implementation
     const handleShare = useCallback(async () => {
-        if (!cardRef.current || isSharing) return;
+        if (!weatherData) return;
 
-        setIsSharing(true);
-        try {
-            const node = cardRef.current;
+        // Generate unique filename with date and time
+        const now = new Date();
+        const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+        const locationSlug = (weatherData.location || 'weather').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        const fileName = `${locationSlug}-weather-${timestamp}.png`;
 
-            // Wait for fonts to be ready
-            await document.fonts.ready;
-
-            // Detect dark mode
-            const isDarkMode = document.documentElement.classList.contains('dark');
-            const bgColor = isDarkMode ? '#1e293b' : '#f8fafc'; // slate-800 / slate-50
-
-            // Capture the card as PNG blob
-            const blob = await htmlToImage.toBlob(node, {
-                pixelRatio: window.devicePixelRatio || 2,
-                backgroundColor: bgColor,
-                cacheBust: true,
-                width: node.scrollWidth,
-                height: node.scrollHeight,
-                style: { transform: 'none', margin: '0' },
-            });
-
-            if (!blob) {
-                throw new Error('Failed to create image');
-            }
-
-            // Generate unique filename with date and time
-            const now = new Date();
-            const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
-            const locationSlug = (weatherData?.location || 'weather').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-            const fileName = `${locationSlug}-weather-${timestamp}.png`;
-
-            // Try Web Share API first
-            if (navigator.share && navigator.canShare) {
-                const file = new File([blob], fileName, { type: 'image/png' });
-                const shareData = {
-                    title: `Weather in ${weatherData?.location}`,
-                    text: `${weatherData?.location} - ${weatherData?.temperature}°${unitType === 'metric' ? 'C' : 'F'} ${weatherData?.condition}`,
-                    files: [file],
-                };
-
-                if (navigator.canShare(shareData)) {
-                    await navigator.share(shareData);
-                    setShareSuccess(true);
-                    setTimeout(() => setShareSuccess(false), 2000);
-                    return;
-                }
-            }
-
-            // Fallback: Download the image
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            setShareSuccess(true);
-            setTimeout(() => setShareSuccess(false), 2000);
-        } catch (err) {
-            // Silently ignore AbortError (user cancelled)
-            if (err instanceof Error && err.name === 'AbortError') {
-                return;
-            }
-            console.error('Share error:', err);
-        } finally {
-            setIsSharing(false);
-        }
-    }, [weatherData, unitType, isSharing]);
+        await share(cardRef, {
+            fileName,
+            title: `Weather in ${weatherData.location}`,
+            text: `${weatherData.location} - ${weatherData.temperature}°${unitType === 'metric' ? 'C' : 'F'} ${weatherData.condition}`,
+        });
+    }, [weatherData, unitType, share]);
 
     useEffect(() => {
         // Only auto-fetch if autoFetch is true AND we don't have temperature data AND we haven't fetched yet
@@ -505,10 +447,12 @@ export function WeatherCard({
     const getWeatherIcon = () => {
         if (weatherIconUrl) {
             return (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
-                    src={weatherIconUrl}
+                    src={`/api/proxy-image?url=${encodeURIComponent(weatherIconUrl)}`}
                     alt={condition || 'Weather icon'}
                     className="w-16 h-16"
+                    crossOrigin="anonymous"
                 />
             );
         }
@@ -777,7 +721,7 @@ export function WeatherCard({
                         <div className="rounded-xl border border-border bg-muted p-3">
                             <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-1">
                                 <Sun size={12} />
-                                <span>UV Index</span>
+                                <span className="flex-1">UV Index</span>
                             </div>
                             <div className="text-lg font-semibold text-foreground">
                                 {uvIndex}
@@ -856,229 +800,137 @@ export function WeatherCard({
     );
 }
 
-// Animated Weather Icons
-function AnimatedSun() {
-    return (
-        <motion.svg
-            width="64"
-            height="64"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-yellow-400 dark:text-yellow-500"
-            animate={{
-                rotate: [0, 360],
-                scale: [1, 1.1, 1],
-            }}
-            transition={{
-                rotate: { duration: 20, repeat: Infinity, ease: 'linear' },
-                scale: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
-            }}
-        >
-            <circle cx="12" cy="12" r="4" fill="currentColor" />
-            <motion.g
-                animate={{ rotate: [0, 360] }}
-                transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-            >
-                <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </motion.g>
-        </motion.svg>
-    );
-}
+// Icon Components for Fallback
+const AnimatedSun = () => (
+    <motion.svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-yellow-500"
+    >
+        <motion.circle
+            cx="12"
+            cy="12"
+            r="5"
+            animate={{ scale: [1, 1.1, 1] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.g animate={{ rotate: 360 }} transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}>
+            {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                <line key={angle} x1="12" y1="1" x2="12" y2="3" transform={`rotate(${angle} 12 12)`} />
+            ))}
+        </motion.g>
+    </motion.svg>
+);
 
-function AnimatedRain() {
-    return (
-        <motion.svg
-            width="64"
-            height="64"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-blue-400 dark:text-blue-500"
-        >
-            <motion.path
-                d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-                animate={{
-                    scale: [1, 1.05, 1],
-                }}
-                transition={{
-                    duration: 2,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                }}
-            />
-            <motion.g
-                initial={{ y: 0 }}
-                animate={{ y: [0, 4, 0] }}
-                transition={{ duration: 0.6, repeat: Infinity, ease: 'easeInOut' }}
-            >
-                <line x1="7" y1="14" x2="7" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </motion.g>
-            <motion.g
-                initial={{ y: 0 }}
-                animate={{ y: [0, 4, 0] }}
-                transition={{ duration: 0.6, repeat: Infinity, ease: 'easeInOut', delay: 0.2 }}
-            >
-                <line x1="12" y1="14" x2="12" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </motion.g>
-            <motion.g
-                initial={{ y: 0 }}
-                animate={{ y: [0, 4, 0] }}
-                transition={{ duration: 0.6, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
-            >
-                <line x1="17" y1="14" x2="17" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </motion.g>
-        </motion.svg>
-    );
-}
+const AnimatedCloud = () => (
+    <motion.svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-slate-400"
+    >
+        <motion.path
+            d="M17.5 19c2.485 0 4.5-2.015 4.5-4.5S19.985 10 17.5 10c-.157 0-.311.008-.462.024a5.003 5.003 0 0 0-9.076 0A5.003 5.003 0 0 0 3 14.5C3 16.985 5.015 19 7.5 19h10z"
+            animate={{ x: [0, 2, 0] }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+        />
+    </motion.svg>
+);
 
-function AnimatedSnow() {
-    return (
-        <motion.svg
-            width="64"
-            height="64"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-blue-200 dark:text-blue-300"
-        >
-            <motion.path
-                d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-                animate={{
-                    scale: [1, 1.05, 1],
-                }}
-                transition={{
-                    duration: 2,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                }}
-            />
+const AnimatedRain = () => (
+    <motion.svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-blue-400"
+    >
+        <path d="M17.5 19c2.485 0 4.5-2.015 4.5-4.5S19.985 10 17.5 10c-.157 0-.311.008-.462.024a5.003 5.003 0 0 0-9.076 0A5.003 5.003 0 0 0 3 14.5C3 16.985 5.015 19 7.5 19h10z" />
+        <motion.line
+            x1="8"
+            y1="13"
+            x2="8"
+            y2="15"
+            animate={{ y: [0, 5], opacity: [0, 1, 0] }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear', delay: 0 }}
+        />
+        <motion.line
+            x1="12"
+            y1="13"
+            x2="12"
+            y2="15"
+            animate={{ y: [0, 5], opacity: [0, 1, 0] }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear', delay: 0.3 }}
+        />
+        <motion.line
+            x1="16"
+            y1="13"
+            x2="16"
+            y2="15"
+            animate={{ y: [0, 5], opacity: [0, 1, 0] }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear', delay: 0.6 }}
+        />
+    </motion.svg>
+);
+
+const AnimatedSnow = () => (
+    <motion.svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-slate-300"
+    >
+        <path d="M17.5 19c2.485 0 4.5-2.015 4.5-4.5S19.985 10 17.5 10c-.157 0-.311.008-.462.024a5.003 5.003 0 0 0-9.076 0A5.003 5.003 0 0 0 3 14.5C3 16.985 5.015 19 7.5 19h10z" />
+        {[8, 12, 16].map((x, i) => (
             <motion.circle
-                cx="8"
-                cy="18"
+                key={x}
+                cx={x}
+                cy="15"
                 r="1"
                 fill="currentColor"
-                animate={{
-                    y: [0, 3, 0],
-                    opacity: [1, 0.5, 1],
-                }}
-                transition={{
-                    duration: 1.5,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                }}
+                animate={{ y: [0, 10], opacity: [0, 1, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear', delay: i * 0.5 }}
             />
-            <motion.circle
-                cx="12"
-                cy="18"
-                r="1"
-                fill="currentColor"
-                animate={{
-                    y: [0, 3, 0],
-                    opacity: [1, 0.5, 1],
-                }}
-                transition={{
-                    duration: 1.5,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                    delay: 0.3,
-                }}
-            />
-            <motion.circle
-                cx="16"
-                cy="18"
-                r="1"
-                fill="currentColor"
-                animate={{
-                    y: [0, 3, 0],
-                    opacity: [1, 0.5, 1],
-                }}
-                transition={{
-                    duration: 1.5,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                    delay: 0.6,
-                }}
-            />
-        </motion.svg>
-    );
-}
+        ))}
+    </motion.svg>
+);
 
-function AnimatedWind() {
-    return (
-        <motion.svg
-            width="64"
-            height="64"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-foreground"
-            animate={{
-                rotate: [0, 360],
-            }}
-            transition={{
-                duration: 8,
-                repeat: Infinity,
-                ease: 'linear',
-            }}
-        >
-            <path
-                d="M9.59 4.59A2 2 0 1 1 11 8H2m10-4a2 2 0 1 0-2 2h7m-7 4a2 2 0 1 1-2 2H2m8 4a2 2 0 1 0 2 2h7"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-            />
-        </motion.svg>
-    );
-}
-
-function AnimatedCloud() {
-    return (
-        <motion.svg
-            width="64"
-            height="64"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-foreground"
-        >
-            <motion.path
-                d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-                animate={{
-                    x: [0, 2, 0],
-                    scale: [1, 1.02, 1],
-                }}
-                transition={{
-                    duration: 4,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                }}
-            />
-        </motion.svg>
-    );
-}
-
-
+const AnimatedWind = () => (
+    <motion.svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-slate-400"
+    >
+        <motion.path
+            d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"
+            animate={{ x: [0, -3, 0] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        />
+    </motion.svg>
+);
